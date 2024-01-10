@@ -23,7 +23,7 @@ def SCM_learner(
     
     alpha = significance level, default is alpha=0.05
     """
-    
+    node_list = list(node_list)
     SCM_learned = nx.DiGraph()
     SCM_learned.add_nodes_from(np.sort(node_list))
 
