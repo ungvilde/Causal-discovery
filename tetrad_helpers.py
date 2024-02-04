@@ -7,11 +7,12 @@ import java.util as jutil
 def timeseries_knowledge(
     n_neurons,
     n_timelags, 
+    refractory_effect,
     require_refractory_effects=True, 
     forbid_contemporaneous_effects=True
     ):
 
-    refractory_effect=n_timelags #refractory effects occur at every relevant time lag
+    #refractory_effect=n_timelags #refractory effects occur at every relevant time lag
 
     kn = td.Knowledge()
     for i in range(n_neurons):
@@ -30,13 +31,14 @@ def timeseries_knowledge(
     #        for j in range(n_neurons):
     #            if i != j:
     #                kn.setForbidden(f'x{i},{current_time}', f'x{j},{current_time+1}')
-    
+
     #for t in range(n_timelags+1):
     #    kn.setTierForbiddenWithin(t, True)
     
     return kn
 
-def create_fulltime_graph_tetrad(G_summary, n_timelags, latent_nodes=[]):
+def create_fulltime_graph_tetrad(G_summary, n_timelags, refractory_effect,
+latent_nodes=[]):
     """
     G_summary: a networkx.DiGraph object that represents what neurons causally affect each other
     n_timelags: time window in which causal interactions occur
@@ -49,7 +51,7 @@ def create_fulltime_graph_tetrad(G_summary, n_timelags, latent_nodes=[]):
     nodename2idx_fulltime = dict()
     nodename2idx_summary = dict()
     
-    refractory_effect = 2
+    #refractory_effect = 2
 
     idx=0
     for i, node_name in enumerate(G_summary.nodes()):
@@ -109,3 +111,50 @@ def interventional_knowledge(
                     kn.setForbidden(f'x{i},{current_time}', f'x{intervened_node},{effect_time}')
 
     return kn
+
+def get_hypersummary(pag, n_neurons):
+    summary_edges = {(i, j) : set() for i in range(n_neurons) for j in range(n_neurons) if j != i}
+
+    nodes_obs = pag.getNodes()
+    nodes_str = pag.getNodeNames()
+
+    for i, node1 in enumerate(nodes_obs):
+        for j, node2 in enumerate(nodes_obs):
+            if pag.isAdjacentTo(node1, node2):
+                edge_str = str(pag.getEdge(node1, node2))
+                neuron_id = nodes_str[i][1:str(nodes_str[i]).find(',')]
+                target_id = nodes_str[j][1:str(nodes_str[j]).find(',')]
+                
+                if neuron_id != target_id and edge_str.find(f'x{neuron_id}') < edge_str.find(f'x{target_id}'):
+                    edge_str = edge_str[(edge_str.find(' ')+1):edge_str.rfind(' ')]
+                    summary_edges[(int(neuron_id), int(target_id))].add(edge_str)
+
+    summary_edges = { edge: edge_type for edge, edge_type in summary_edges.items() if len(edge_type) > 0}
+
+    for edge in summary_edges:
+        if '-->' in summary_edges[edge]:
+            summary_edges[edge] = '-->'
+        if 'o->' in summary_edges[edge] and not 'o-o' in summary_edges[edge] and not '-->' in summary_edges[edge]:
+            summary_edges[edge] = 'o->'
+        if 'o-o' in summary_edges[edge] and not '-->' in summary_edges[edge]:
+            summary_edges[edge] = 'o-o'
+        if '<->' in summary_edges[edge] and not 'o->' in summary_edges[edge] and not 'o-o' in summary_edges[edge] and not '-->' in summary_edges[edge]:
+            summary_edges[edge] = '<->'
+    
+    return summary_edges
+
+def get_intervened_node(hypersummary, n_neurons):
+    unresolved_count = {i : 0 for i in range(n_neurons)}
+
+    for u, v in hypersummary:
+        for edge_str in hypersummary[(u, v)]:
+            if edge_str.find('o-') != -1:
+                unresolved_count[u] += 1
+
+    return max(unresolved_count, key=unresolved_count.get)
+
+def dag_to_mag(summary_graph, latent_nodes):
+    observed_nodes = [i for i in summary_graph.nodes() if i not in latent_nodes]
+    summary_observed = nx.subgraph(summary_graph, observed_nodes)
+
+    return mag  

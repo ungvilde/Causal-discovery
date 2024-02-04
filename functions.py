@@ -1,7 +1,11 @@
+import itertools
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
+
 from causallearn.utils.PCUtils.BackgroundKnowledge import BackgroundKnowledge
+from tqdm import tqdm
+
 
 def compute_SHD(G_true, G_learned):
     SHD = 0
@@ -130,3 +134,44 @@ def background_knowledge_timeseries(
                         bk.add_forbidden_by_node(nodelist[node_idx+current_time], nodelist[target_idx + effect_time])
                     
     return bk
+
+def get_mag_from_dag(full_dag, observed_nodes):
+    mag = nx.DiGraph()
+    mag.add_nodes_from(observed_nodes)
+    nodepairs = list(itertools.combinations(observed_nodes, 2))
+
+    is_adjacent = [] #stores pairs of nodes that are adjacent in the MAG
+    for node1, node2 in tqdm(nodepairs, total=len(nodepairs)):
+        # iterate through each combination of two nodes in the graph and find adjacencies
+        
+        is_d_sep = []
+        for L in range(len(observed_nodes) + 1):
+            for subset in itertools.combinations(observed_nodes, L):
+                # check d-separation relative to any subset in the observed graph
+                if node1 not in subset and node2 not in subset:
+                    is_d_sep.append(nx.d_separated(full_dag, {node1}, {node2}, subset))
+                    
+        if not np.any(is_d_sep): # nodes that are not d-separated by observable subsets in the DAG are adjacent in the MAG
+            #print(node1, 'is adjacent to', node2, 'in MAG')
+            is_adjacent.append((node1, node2))
+
+        if not nx.d_separated(full_dag, {node1}, {node2}, observed_nodes):
+            #print(node1, 'has hidden common cause with', node2)
+            is_adjacent.append((node1, node2))
+
+                        
+    for node1, node2 in is_adjacent:
+        if node1 in nx.ancestors(full_dag, node2): # ancestors have direct edge
+            mag.add_edge(node1, node2)
+            #print(node1, '->', node2, 'in MAG')
+
+        elif node2 in nx.ancestors(full_dag, node1):
+            mag.add_edge(node2, node1)
+            #print(node2, '->', node1, 'in MAG')
+
+        else:
+            mag.add_edge(node1, node2)
+            mag.add_edge(node2, node1)
+            #print(node1, '<->', node2, 'in MAG')
+    
+    return mag

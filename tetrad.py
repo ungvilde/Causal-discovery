@@ -1,4 +1,6 @@
 # to Run: 
+# git clone https://github.com/cmu-phil/py-tetrad/
+# cd py-tetrad/pytetrad
 # $ source ~/.bash_profile
 
 import sys
@@ -20,13 +22,13 @@ seed=123
 np.random.seed(seed)
 
 # model parameters
-n_neurons=6
-n_hidden=2
+n_neurons=8
+n_hidden=4
 n_timelags=2
 prob_of_edge = 0.1
 
 # set up summary and full time graph
-G_summary = nx.erdos_renyi_graph(n=n_neurons, p=prob_of_edge, directed=True, seed=123)
+G_summary = nx.erdos_renyi_graph(n=n_neurons, p=prob_of_edge, directed=True, seed=seed)
 latent_nodes = np.random.choice(n_neurons, size=n_hidden, replace=False)
 
 node_color = ['grey' if node in latent_nodes else 'red' for node in G_summary.nodes()]
@@ -47,30 +49,15 @@ pag = fci.search()
 
 print(pag)
 
-summary_edges = {(i,j) : set() for i in range(n_neurons) for j in range(n_neurons) if j != i}
+summary_edges = get_hypersummary(pag, n_neurons)
+intervened_node = get_intervened_node(summary_edges, n_neurons)
 
-nodes_obs = pag.getNodes()
-nodes_str = pag.getNodeNames()
-for i, node1 in enumerate(nodes_obs):
-    for j, node2 in enumerate(nodes_obs):
-        if pag.isAdjacentTo(node1, node2):
-            edge_str = str(pag.getEdge(node1, node2))
-            neuron_id = nodes_str[i][1:str(nodes_str[i]).find(',')]
-            target_id = nodes_str[j][1:str(nodes_str[j]).find(',')]
-            if neuron_id != target_id and edge_str.find(f'x{neuron_id}') < edge_str.find(f'x{target_id}'):
-                #edge_str = str(pag.getEdge(node1, node2))
-                edge_str = edge_str[(edge_str.find(' ')+1):edge_str.rfind(' ')]
-                summary_edges[(int(neuron_id), int(target_id))].add(edge_str)
+intervened_node = 6
 
-summary_edges = { edge: edge_type for edge, edge_type in summary_edges.items() if len(edge_type) > 0}
 print(summary_edges)
-
-# max_key = max(d, key= lambda x: len(d[x]))
-
 
 '''
 # now do interventions
-intervened_node = 6
 print('INTERVENE ON NODE ', intervened_node)
 
 manipulated_edges = list(G_summary.in_edges(intervened_node))
@@ -93,10 +80,17 @@ pag = fci.search()
 
 print(pag)
 
+summary_edges = get_hypersummary(pag, n_neurons)
+print(summary_edges)
+
 # algorithm
 
 # learn PMG from obs. data and bk
 # intervene on node A where A has the most edges of type *-o
 # if A has the same dependence on B in interventional setting, then A *-> B
 # else A *-- B
+
+# note: need to include unconnected nodes in summary result
+# should 
+
 '''
