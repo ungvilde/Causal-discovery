@@ -143,18 +143,27 @@ def get_hypersummary(pag, n_neurons):
     
     return summary_edges
 
-def get_intervened_node(hypersummary, n_neurons):
-    unresolved_count = {i : 0 for i in range(n_neurons)}
+def get_interventions(hypersummary, n_neurons):
+    unresolved_count = {}
+    unresolved_targets = {}
 
     for u, v in hypersummary:
-        for edge_str in hypersummary[(u, v)]:
-            if edge_str.find('o-') != -1:
-                unresolved_count[u] += 1
+        edge_str= hypersummary[(u, v)]
+        if edge_str.find('o-') != -1:
+            unresolved_count[u] = 0
+            unresolved_targets[u] = []
 
-    return max(unresolved_count, key=unresolved_count.get)
+    for u, v in hypersummary:
+        edge_str= hypersummary[(u, v)]
+        if edge_str.find('o-') != -1:
+            unresolved_count[u] += 1
+            unresolved_targets[u].append(v)
+
+    return sorted(unresolved_count, key=unresolved_count.get, reverse=True), unresolved_targets
 
 def dag_to_mag(summary_graph, latent_nodes):
     observed_nodes = [i for i in summary_graph.nodes() if i not in latent_nodes]
     summary_observed = nx.subgraph(summary_graph, observed_nodes)
 
     return mag  
+

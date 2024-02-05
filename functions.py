@@ -140,33 +140,36 @@ def get_mag_from_dag(full_dag, observed_nodes):
     mag.add_nodes_from(observed_nodes)
     nodepairs = list(itertools.combinations(observed_nodes, 2))
 
+    mag_init = nx.subgraph(full_dag, observed_nodes) # removes the need to check d-sep among observed nodes for every subset!
+
     is_adjacent = [] #stores pairs of nodes that are adjacent in the MAG
     for node1, node2 in tqdm(nodepairs, total=len(nodepairs)):
         # iterate through each combination of two nodes in the graph and find adjacencies
         
-        is_d_sep = []
-        for L in range(len(observed_nodes) + 1):
-            for subset in itertools.combinations(observed_nodes, L):
-                # check d-separation relative to any subset in the observed graph
-                if node1 not in subset and node2 not in subset:
-                    is_d_sep.append(nx.d_separated(full_dag, {node1}, {node2}, subset))
+        # is_d_sep = []
+        # for L in range(len(observed_nodes) + 1):
+        #     for subset in itertools.combinations(observed_nodes, L):
+        #         # check d-separation relative to any subset in the observed graph
+        #         if node1 not in subset and node2 not in subset:
+        #             is_d_sep.append(nx.d_separated(full_dag, {node1}, {node2}, subset))
                     
-        if not np.any(is_d_sep): # nodes that are not d-separated by observable subsets in the DAG are adjacent in the MAG
-            #print(node1, 'is adjacent to', node2, 'in MAG')
-            is_adjacent.append((node1, node2))
+        # if not np.any(is_d_sep): # nodes that are not d-separated by observable subsets in the DAG are adjacent in the MAG
+        #     #print(node1, 'is adjacent to', node2, 'in MAG')
+        #     is_adjacent.append((node1, node2))
 
         if not nx.d_separated(full_dag, {node1}, {node2}, observed_nodes):
             #print(node1, 'has hidden common cause with', node2)
             is_adjacent.append((node1, node2))
 
+    mag = mag_init.copy()
                         
     for node1, node2 in is_adjacent:
         if node1 in nx.ancestors(full_dag, node2): # ancestors have direct edge
-            mag.add_edge(node1, node2)
+            continue
             #print(node1, '->', node2, 'in MAG')
 
         elif node2 in nx.ancestors(full_dag, node1):
-            mag.add_edge(node2, node1)
+            continue
             #print(node2, '->', node1, 'in MAG')
 
         else:

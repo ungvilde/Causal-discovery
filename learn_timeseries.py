@@ -1,4 +1,5 @@
 import sys
+import os
 import torch
 import pickle
 import networkx as nx
@@ -12,22 +13,20 @@ jpype.startJVM(classpath=[f"{BASE_DIR}/pytetrad/resources/tetrad-current.jar"])
 
 from tetrad_helpers import *
 from functions import *
-#from torch_geometric.utils import to_networkx
 
-seed=123
+seed=132
 np.random.seed(seed)
 
-n_neurons=5
-n_timelags=2
+n_neurons = 10
+n_timelags = 2
 refractory_effect = 2
+n_obs = 7
 
 # set up summary and full time graph
-summary_graph = nx.DiGraph()
-summary_graph.add_nodes_from(np.arange(n_neurons))
-summary_graph.add_edges_from([(0,1), (0,2), (1,3), (4, 3)])
+summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.25, directed=True, seed=196)
 
-latent_nodes = [0]
-observed_nodes = np.sort([i for i in summary_graph.nodes() if i not in latent_nodes])
+observed_nodes = np.sort(np.random.choice(n_neurons, size=n_obs, replace=False))
+latent_nodes = [i for i in summary_graph.nodes() if i not in observed_nodes]
 
 n_hidden = len(latent_nodes)
 n_obs = len(observed_nodes)
@@ -48,17 +47,17 @@ fulltime_graph_obs = nx.subgraph(fulltime_graph, observed_nodes_fulltime)
 fulltime_node_color = ['grey' if node not in observed_nodes_fulltime else 'red' for node in fulltime_graph.nodes()]
 
 # visualisation of one of the networks generated
-fig, ax = plt.subplots(1, 2, figsize=(6, 3))
+fig, ax = plt.subplots(1, 2, figsize=(n_neurons, n_neurons // 2))
 nx.draw_networkx(summary_graph, arrows=True, 
                  ax=ax[0], with_labels=True, 
                  node_size=400, alpha=1, node_color=node_color,
                 pos=nx.circular_layout(summary_graph))
 ax[0].set_title("Summary graph with latents")
-nx.draw_networkx(fulltime_graph, pos=pos, labels=time_label, node_size=400,ax=ax[1], node_color=fulltime_node_color,alpha=0.5)
+nx.draw_networkx(fulltime_graph, pos=pos, labels=time_label, node_size=400,ax=ax[1], node_color=fulltime_node_color,alpha=1)
 ax[1].set_title("Full time graph with latents")
 plt.tight_layout()
 plt.savefig(
-    f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/timeseries_graph_nobs{n_obs}_nhid{n_hidden}.pdf'
+    f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/timeseries_graph.pdf'
     )
 
 # get the true MAG for the observed variables
@@ -74,17 +73,84 @@ nx.draw_networkx(mag,
 plt.title('Maximal ancestral graph')
 plt.tight_layout()
 plt.savefig(
-    f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/MAG_nobs{n_obs}_nhid{n_hidden}.pdf'
+    f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/MAG.pdf'
     )
 
 # learn pag with oracle 
 dag, _, _ = create_fulltime_graph_tetrad(summary_graph, n_timelags=n_timelags, latent_nodes=latent_nodes, refractory_effect=refractory_effect)
 
 fci = ts.Fci(ts.test.MsepTest(dag))
+fci.setVerbose(False)
 kn = timeseries_knowledge(n_neurons, n_timelags=n_timelags, refractory_effect=refractory_effect)
 fci.setKnowledge(kn)
 pag = fci.search()
 
-print(pag)
 summary_edges = get_hypersummary(pag, n_neurons)
 print(summary_edges)
+
+intervention_nodes, targets = get_interventions(summary_edges, n_neurons) # neurons with undecided marks and their resp. targets
+count_interventions = 0
+for i in range(len(intervention_nodes)):
+    intervention_node = intervention_nodes[i]
+    target_nodes = targets[intervention_node]
+
+    # convert nodes to fulltime equivalents
+    intervention_nodes_fulltime = np.arange(intervention_node*(n_timelags+1), (intervention_node+1)*(n_timelags+1))
+    target_nodes_fulltime = []
+    for node in target_nodes:
+        target_nodes_fulltime.extend(list(np.arange(node*(n_timelags+1), (node+1)*(n_timelags+1))))
+
+    # get the manipulated graph
+    manipulated_graph = summary_graph.copy()
+    manipulated_graph.remove_edges_from(summary_graph.in_edges(intervention_node))
+
+    # now get fulltime graph under manipulation
+    manipulated_fulltime_graph, _, _ = create_fulltime_graph(manipulated_graph, n_timelags=n_timelags)
+
+    # make plot
+    fulltime_node_color = ['yellow' if node in intervention_nodes_fulltime \
+                            else 'red' if node in observed_nodes_fulltime \
+                            else 'grey' \
+                            for node in manipulated_fulltime_graph.nodes()]
+    fig, ax = plt.subplots(1, 2, figsize=(n_neurons, n_neurons // 2))
+    nx.draw_networkx(manipulated_graph, arrows=True, 
+                    ax=ax[0], with_labels=True, 
+                    node_size=400, alpha=1, node_color=node_color,
+                    pos=nx.circular_layout(manipulated_graph))
+    ax[0].set_title("Manipulated graph with latents")
+    nx.draw_networkx(manipulated_fulltime_graph, pos=pos, labels=time_label, node_size=400,ax=ax[1], node_color=fulltime_node_color)
+    ax[1].set_title("Manipulated full time graph with latents")
+    plt.tight_layout()
+    plt.savefig(
+        f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/manipulated_timeseries_graph.pdf'
+        )
+
+    for node1 in intervention_nodes_fulltime:
+        for node2 in target_nodes_fulltime:
+            cause_time = node1 % (n_timelags+1)
+            effect_time = node2 % (n_timelags+1)
+            cause_neuron = node1 // (n_timelags+1)
+            effect_neuron = node2 // (n_timelags+1)
+
+            if (node1, node2) in manipulated_fulltime_graph.edges() and effect_time > cause_time:
+                print('Require', f'x{cause_neuron},{cause_time}', '-->',f'x{effect_neuron},{effect_time}')
+                kn.setRequired(f'x{cause_neuron},{cause_time}', f'x{effect_neuron},{effect_time}')
+            
+            if (node1, node2) not in manipulated_fulltime_graph.edges() and effect_time > cause_time:
+                print('Forbid', f'x{cause_neuron},{cause_time}', '-->',f'x{effect_neuron},{effect_time}')
+                kn.setForbidden(f'x{cause_neuron},{cause_time}', f'x{effect_neuron},{effect_time}')
+
+    fci.setKnowledge(kn)
+    pag = fci.search()
+    #print(pag)
+    summary_edges = get_hypersummary(pag, n_neurons)
+    print(summary_edges)
+
+    causal_discovery_complete = True
+    for edge in summary_edges:
+        if summary_edges[edge].find('o') != -1:
+            causal_discovery_complete = False
+    count_interventions+=1
+    if causal_discovery_complete:
+        print(f'All edges were discovered after {count_interventions} interventions (out of {len(intervention_nodes)}).')
+        break
