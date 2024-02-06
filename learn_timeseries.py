@@ -20,10 +20,14 @@ np.random.seed(seed)
 n_neurons = 10
 n_timelags = 2
 refractory_effect = 2
-n_obs = 5
+n_obs = 7
 
 # set up summary and full time graph
-summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.2, directed=True, seed=196)
+summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.3, directed=True, seed=196)
+# summary_graph = nx.DiGraph()
+# summary_graph.add_nodes_from(np.arange(5))
+# summary_graph.add_edges_from([(1, 0), (1, 2), (2,0), (0,2),(1,3),(1,4),(2,1),(1,3)])
+# observed_nodes = [0,2,3,4]
 
 observed_nodes = np.sort(np.random.choice(n_neurons, size=n_obs, replace=False))
 latent_nodes = [i for i in summary_graph.nodes() if i not in observed_nodes]
@@ -64,25 +68,6 @@ plt.savefig(
 mag = get_mag_from_dag(fulltime_graph, observed_nodes_fulltime, n_timelags)
 true_summary_edges = get_mag_from_dag(fulltime_graph, observed_nodes_fulltime, n_timelags)
 
-# HERE: get true hypersummary
-#true_summary_edges = get_MAG_summary(mag, n_timelags)
-print('True summary:', mag)
-
-
-#fig, ax = plt.subplots(1, 2, figsize=(5, 3))
-#plt.figure(figsize=(5,4))
-# nx.draw_networkx(mag, 
-#                  pos={k: pos[k] for k in observed_nodes_fulltime},
-#                  labels={k: time_label[k] for k in observed_nodes_fulltime},
-#                  node_size=400, 
-#                  node_color='red',
-#                 )
-# plt.title('Maximal ancestral graph')
-# plt.tight_layout()
-# plt.savefig(
-#     f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/MAG.pdf'
-#     )
-
 # learn pag with oracle 
 dag, _, _ = create_fulltime_graph_tetrad(summary_graph, n_timelags=n_timelags, latent_nodes=latent_nodes, refractory_effect=refractory_effect)
 
@@ -93,8 +78,6 @@ fci.setKnowledge(kn)
 pag = fci.search()
 
 summary_edges = get_hypersummary(pag, n_neurons)
-print('True summary:', mag)
-print('FCI summary:', summary_edges)
 
 print('Edge | FCI | Truth')
 for edge in summary_edges:
@@ -109,9 +92,9 @@ for edge in summary_edges:
 
 intervention_nodes, targets = get_interventions(summary_edges, n_neurons) # neurons with undecided marks and their resp. targets
 count_interventions = 0
-print('Do interventions:')
-for i in range(len(intervention_nodes)):
-    intervention_node = intervention_nodes[i]
+print('Do interventions in following sequence:', intervention_nodes)
+for intervention_node in intervention_nodes:
+    count_interventions+=1
     target_nodes = targets[intervention_node]
 
     # convert nodes to fulltime equivalents
@@ -145,24 +128,33 @@ for i in range(len(intervention_nodes)):
         f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/manipulated_timeseries_graph.pdf'
         )
 
+    # evaluate if there is a causal effect between intervention node and target nodes
     for node1 in intervention_nodes_fulltime:
         for node2 in target_nodes_fulltime:
             cause_time = node1 % (n_timelags+1)
             effect_time = node2 % (n_timelags+1)
+            
             cause_neuron = node1 // (n_timelags+1)
             effect_neuron = node2 // (n_timelags+1)
 
-            if (node1, node2) in manipulated_fulltime_graph.edges() and effect_time > cause_time:
+            cond_set = [i for i in manipulated_fulltime_graph.nodes() if i not in [node1, node2] and i in observed_nodes_fulltime]
+            are_adjacent = nx.d_separated(manipulated_fulltime_graph, {node1}, {node2}, cond_set) == False
+            is_ancestor = node1 in nx.ancestors(manipulated_fulltime_graph, node2)
+            if are_adjacent and is_ancestor:
+                # require causal effect because information will flow from node1 to node 2
                 print('Require', f'x{cause_neuron},{cause_time}', '-->',f'x{effect_neuron},{effect_time}')
                 kn.setRequired(f'x{cause_neuron},{cause_time}', f'x{effect_neuron},{effect_time}')
-            
-            if (node1, node2) not in manipulated_fulltime_graph.edges() and effect_time > cause_time:
+            else:
                 print('Forbid', f'x{cause_neuron},{cause_time}', '-->',f'x{effect_neuron},{effect_time}')
                 kn.setForbidden(f'x{cause_neuron},{cause_time}', f'x{effect_neuron},{effect_time}')
 
+    # add intervention knowledge 
     fci.setKnowledge(kn)
     pag = fci.search()
     summary_edges = get_hypersummary(pag, n_neurons)
+
+    # print results
+    print('After ', count_interventions, f'interventions (out of {len(intervention_nodes)} suggested):')
     print('Edge | FCI | Truth')
     for edge in summary_edges:
         try:
@@ -178,7 +170,4 @@ for i in range(len(intervention_nodes)):
     for edge in summary_edges:
         if summary_edges[edge].find('o') != -1:
             causal_discovery_complete = False
-    count_interventions+=1
-    if causal_discovery_complete:
-        print(f'All edges were discovered after {count_interventions} interventions (out of {len(intervention_nodes)}).')
-        break
+

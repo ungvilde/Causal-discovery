@@ -134,11 +134,11 @@ def get_hypersummary(pag, n_neurons):
     for edge in summary_edges:
         if '-->' in summary_edges[edge]:
             summary_edges[edge] = '-->'
-        if 'o->' in summary_edges[edge] and not 'o-o' in summary_edges[edge] and not '-->' in summary_edges[edge]:
+        if 'o->' in summary_edges[edge] and not '-->' in summary_edges[edge]:
             summary_edges[edge] = 'o->'
-        if 'o-o' in summary_edges[edge] and not '-->' in summary_edges[edge]:
+        if 'o-o' in summary_edges[edge] and not '-->' in summary_edges[edge] and not 'o->' in summary_edges[edge]:
             summary_edges[edge] = 'o-o'
-        if '<->' in summary_edges[edge] and not 'o->' in summary_edges[edge] and not 'o-o' in summary_edges[edge] and not '-->' in summary_edges[edge]:
+        if '<->' in summary_edges[edge] and not '-->' in summary_edges[edge] and not 'o->' in summary_edges[edge] and not 'o-o' in summary_edges[edge]:
             summary_edges[edge] = '<->'
 
     return summary_edges

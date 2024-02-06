@@ -135,55 +135,56 @@ def background_knowledge_timeseries(
                     
     return bk
 
-def get_mag_from_dag(full_dag, observed_nodes, n_timelags):
-    #mag = nx.DiGraph()
-    #mag.add_nodes_from(observed_nodes)
-    #nodepairs = list(itertools.combinations(observed_nodes, 2))
+# def get_mag_from_dag(full_dag, observed_nodes, n_timelags):
+#     #mag = nx.DiGraph()
+#     #mag.add_nodes_from(observed_nodes)
+#     #nodepairs = list(itertools.combinations(observed_nodes, 2))
 
-    #mag_init = nx.subgraph(full_dag, observed_nodes) # removes the need to check d-sep among observed nodes for every subset!
+#     #mag_init = nx.subgraph(full_dag, observed_nodes) # removes the need to check d-sep among observed nodes for every subset!
 
-    is_adjacent = [] #stores pairs of nodes that are adjacent in the MAG
-    for node1 in observed_nodes:
-        # iterate through each combination of two nodes in the graph and find adjacencies
-        for node2 in observed_nodes:
-        # is_d_sep = []
-        # for L in range(len(observed_nodes) + 1):
-        #     for subset in itertools.combinations(observed_nodes, L):
-        #         # check d-separation relative to any subset in the observed graph
-        #         if node1 not in subset and node2 not in subset:
-        #             is_d_sep.append(nx.d_separated(full_dag, {node1}, {node2}, subset))
+#     is_adjacent = [] #stores pairs of nodes that are adjacent in the MAG
+#     for node1 in observed_nodes:
+#         # iterate through each combination of two nodes in the graph and find adjacencies
+#         for node2 in observed_nodes:
+#         # is_d_sep = []
+#         # for L in range(len(observed_nodes) + 1):
+#         #     for subset in itertools.combinations(observed_nodes, L):
+#         #         # check d-separation relative to any subset in the observed graph
+#         #         if node1 not in subset and node2 not in subset:
+#         #             is_d_sep.append(nx.d_separated(full_dag, {node1}, {node2}, subset))
                     
-        # if not np.any(is_d_sep): # nodes that are not d-separated by observable subsets in the DAG are adjacent in the MAG
-        #     #print(node1, 'is adjacent to', node2, 'in MAG')
-        #     is_adjacent.append((node1, node2))
-            if (node1, node2) in full_dag.edges():
-                is_adjacent.append((node1, node2))
-            if not nx.d_separated(full_dag, {node1}, {node2}, observed_nodes):
-                #print(node1, 'has hidden common cause with', node2)
-                is_adjacent.append((node1, node2))
+#         # if not np.any(is_d_sep): # nodes that are not d-separated by observable subsets in the DAG are adjacent in the MAG
+#         #     #print(node1, 'is adjacent to', node2, 'in MAG')
+#         #     is_adjacent.append((node1, node2))
+#             if (node1, node2) in full_dag.edges():
+#                 is_adjacent.append((node1, node2))
+            
+#             if not nx.d_separated(full_dag, {node1}, {node2}, observed_nodes):
+#                 #print(node1, 'has hidden common cause with', node2)
+#                 is_adjacent.append((node1, node2))
 
-    mag = {}
+#     mag = {}
                         
-    for node1, node2 in is_adjacent:
-        if node1// (n_timelags+1) == node2// (n_timelags+1):
-            continue
-        elif node1 in nx.ancestors(full_dag, node2): # ancestors have direct edge
-            mag[(node1// (n_timelags+1), node2// (n_timelags+1))] = '-->'
-            #continue
-            #print(node1, '->', node2, 'in MAG')
+#     for node1, node2 in is_adjacent:
+#         if node1 // (n_timelags+1) == node2// (n_timelags+1):
+#             continue
+#         elif node1 in nx.ancestors(full_dag, node2): # ancestors have direct edge
+#             mag[(node1 // (n_timelags+1), node2 // (n_timelags+1))] = '-->'
+#             #continue
+#             #print(node1, '->', node2, 'in MAG')
 
-        elif node2 in nx.ancestors(full_dag, node1):
-            mag[(node2// (n_timelags+1), node1// (n_timelags+1))] = '-->'
-            #continue
-            #print(node2, '->', node1, 'in MAG')
+#         elif node2 in nx.ancestors(full_dag, node1):
+#             mag[(node2// (n_timelags+1), node1// (n_timelags+1))] = '-->'
+#             #continue
+#             #print(node2, '->', node1, 'in MAG')
 
-        else:
-            mag[(node1// (n_timelags+1), node2// (n_timelags+1))] = '<->'
-            #mag.add_edge(node1, node2)
-            #mag.add_edge(node2, node1)
-            #print(node1, '<->', node2, 'in MAG')
+#         else:
+#             mag[(node1 // (n_timelags+1), node2// (n_timelags+1))] = '<->'
+#             #mag.add_edge(node1, node2)
+#             #mag.add_edge(node2, node1)
+#             #print(node1, '<->', node2, 'in MAG')
     
-    return mag
+#     return mag
 
 def get_MAG_summary(mag, n_timelags):
     summary_edges = {}
@@ -206,3 +207,35 @@ def get_MAG_summary(mag, n_timelags):
             summary_edges[(u // (n_timelags+1), v // (n_timelags+1))] = '-->'
     
     return summary_edges
+
+def get_mag_from_dag(full_dag, observed_nodes, n_timelags):
+    
+    is_adjacent = [] #stores pairs of nodes that are adjacent in the MAG
+    mag = {(i // (n_timelags+1), j // (n_timelags+1)) : set() for i in observed_nodes for j in observed_nodes if j // (n_timelags+1)!= i// (n_timelags+1)}
+
+    for node1 in observed_nodes:
+        for node2 in observed_nodes:
+            condset = [node for node in observed_nodes if node != node1 and node != node2]
+            if node1 // (n_timelags+1) == node2 // (n_timelags+1):
+                continue
+            elif (node1, node2) in full_dag.edges():
+                is_adjacent.append((node1, node2))
+            
+            elif not nx.d_separated(full_dag, {node1}, {node2}, condset):
+                is_adjacent.append((node1, node2))
+       
+    for node1, node2 in is_adjacent:
+        if node1 in nx.ancestors(full_dag, node2): # ancestors have direct edge
+            mag[(node1 // (n_timelags+1), node2 // (n_timelags+1))].add('-->')
+        if node2 in nx.ancestors(full_dag, node1):
+            mag[(node2 // (n_timelags+1), node1// (n_timelags+1))].add('-->')
+        if node1 not in nx.ancestors(full_dag, node2) and node2 not in nx.ancestors(full_dag, node1):
+            mag[(node1 // (n_timelags+1), node2// (n_timelags+1))].add('<->')
+    mag = { edge: edge_type for edge, edge_type in mag.items() if len(edge_type) > 0}
+    
+    for edge in mag:
+        if '-->' in mag[edge]:
+            mag[edge] = '-->'
+        else:
+            mag[edge] = '<->'
+    return mag
