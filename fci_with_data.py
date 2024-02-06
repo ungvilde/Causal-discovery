@@ -3,6 +3,7 @@ import os
 import torch
 import pickle
 import networkx as nx
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import jpype.imports
@@ -10,6 +11,17 @@ import jpype.imports
 BASE_DIR = ".."
 sys.path.append(BASE_DIR)
 jpype.startJVM(classpath=[f"{BASE_DIR}/pytetrad/resources/tetrad-current.jar"])
+
+import edu.cmu.tetrad.graph as tg
+import edu.cmu.tetrad.search as ts
+import edu.cmu.tetrad.data as td
+import tools.translate as tr
+
+import java.util as jutil
+
+from spikeometric.models import BernoulliGLM
+from spikeometric.stimulus import RegularStimulus
+from torch_geometric.utils import from_networkx
 
 from tetrad_helpers import *
 from functions import *
@@ -20,10 +32,10 @@ np.random.seed(seed)
 n_neurons = 10
 n_timelags = 2
 refractory_effect = 2
-n_obs = 5
+n_obs = 7
 
-# set up summary and full time graph
-summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.2, directed=True, seed=196)
+# set up summary
+summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.25, directed=True, seed=196)
 
 observed_nodes = np.sort(np.random.choice(n_neurons, size=n_obs, replace=False))
 latent_nodes = [i for i in summary_graph.nodes() if i not in observed_nodes]
@@ -31,6 +43,45 @@ latent_nodes = [i for i in summary_graph.nodes() if i not in observed_nodes]
 n_hidden = len(latent_nodes)
 n_obs = len(observed_nodes)
 
+# set up simulator
+neuron_model = BernoulliGLM(
+    theta=3.,
+    dt=1.,
+    coupling_window=2,
+    abs_ref_scale=2,
+    abs_ref_strength=-100,
+    rel_ref_scale=0,
+    rel_ref_strength=-30,
+    alpha=0.5,
+    beta=0.2,
+    r = 1
+)
+
+n_timesteps = 10**4
+network_data = from_networkx(summary_graph)
+num_edges = summary_graph.number_of_edges()
+network_data.W0 = torch.ones(summary_graph.number_of_edges())
+network_data.W0[:num_edges//2] = 1.5
+network_data.W0[num_edges//2:] = -3
+
+spikes = neuron_model.simulate(network_data, n_steps=n_timesteps, verbose=False)
+print(spikes.shape)
+#make_rasterplot(spikes)
+
+fulltimegraph_data = pd.DataFrame()
+for i, node_name in enumerate(summary_graph.nodes()):
+    for current_time in range(n_timelags+1):
+        fulltimegraph_data[f'x{node_name},{current_time}'] = np.roll(spikes[i], -current_time)
+print(fulltimegraph_data.head())
+
+data = tr.pandas_data_to_tetrad(fulltimegraph_data)
+test = test.IndTestFisherZ(data, 0.05)
+tetrad_fci = ts.Fci(test)
+tetrad_fci_graph = tetrad_fci.search()
+
+print(tetrad_fci_graph)
+
+'''
 fulltime_graph, pos, time_label = create_fulltime_graph(summary_graph, n_timelags=n_timelags)
     
 node_color = ['grey' if node in latent_nodes else 'red' for node in summary_graph.nodes()]
@@ -61,55 +112,35 @@ plt.savefig(
     )
 
 # get the true MAG for the observed variables
-mag = get_mag_from_dag(fulltime_graph, observed_nodes_fulltime, n_timelags)
-true_summary_edges = get_mag_from_dag(fulltime_graph, observed_nodes_fulltime, n_timelags)
-
-# HERE: get true hypersummary
-#true_summary_edges = get_MAG_summary(mag, n_timelags)
-print('True summary:', mag)
-
-
-#fig, ax = plt.subplots(1, 2, figsize=(5, 3))
-#plt.figure(figsize=(5,4))
-# nx.draw_networkx(mag, 
-#                  pos={k: pos[k] for k in observed_nodes_fulltime},
-#                  labels={k: time_label[k] for k in observed_nodes_fulltime},
-#                  node_size=400, 
-#                  node_color='red',
-#                 )
-# plt.title('Maximal ancestral graph')
-# plt.tight_layout()
-# plt.savefig(
-#     f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/MAG.pdf'
-#     )
+mag = get_mag_from_dag(fulltime_graph, observed_nodes_fulltime)
+fig, ax = plt.subplots(1, 2, figsize=(5, 3))
+plt.figure(figsize=(5,4))
+nx.draw_networkx(mag, 
+                 pos={k: pos[k] for k in observed_nodes_fulltime},
+                 labels={k: time_label[k] for k in observed_nodes_fulltime},
+                 node_size=400, 
+                 node_color='red',
+                )
+plt.title('Maximal ancestral graph')
+plt.tight_layout()
+plt.savefig(
+    f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/MAG.pdf'
+    )
 
 # learn pag with oracle 
 dag, _, _ = create_fulltime_graph_tetrad(summary_graph, n_timelags=n_timelags, latent_nodes=latent_nodes, refractory_effect=refractory_effect)
 
 fci = ts.Fci(ts.test.MsepTest(dag))
-kn = td.Knowledge()
+fci.setVerbose(False)
 kn = timeseries_knowledge(n_neurons, n_timelags=n_timelags, refractory_effect=refractory_effect)
 fci.setKnowledge(kn)
 pag = fci.search()
 
 summary_edges = get_hypersummary(pag, n_neurons)
-print('True summary:', mag)
-print('FCI summary:', summary_edges)
-
-print('Edge | FCI | Truth')
-for edge in summary_edges:
-    try:
-        if summary_edges[edge] == true_summary_edges[edge]:
-            print(edge, summary_edges[edge], true_summary_edges[edge])
-        if summary_edges[edge] != true_summary_edges[edge]:
-            print(edge, summary_edges[edge], true_summary_edges[edge])
-    except KeyError:
-        print(edge, summary_edges[edge])
-        continue
+print(summary_edges)
 
 intervention_nodes, targets = get_interventions(summary_edges, n_neurons) # neurons with undecided marks and their resp. targets
 count_interventions = 0
-print('Do interventions:')
 for i in range(len(intervention_nodes)):
     intervention_node = intervention_nodes[i]
     target_nodes = targets[intervention_node]
@@ -163,16 +194,7 @@ for i in range(len(intervention_nodes)):
     fci.setKnowledge(kn)
     pag = fci.search()
     summary_edges = get_hypersummary(pag, n_neurons)
-    print('Edge | FCI | Truth')
-    for edge in summary_edges:
-        try:
-            if summary_edges[edge] == true_summary_edges[edge]:
-                print(edge, summary_edges[edge], true_summary_edges[edge])
-            if summary_edges[edge] != true_summary_edges[edge]:
-                print(edge, summary_edges[edge], true_summary_edges[edge])
-        except KeyError:
-            print(edge, summary_edges[edge])
-            continue
+    print(summary_edges)
 
     causal_discovery_complete = True
     for edge in summary_edges:
@@ -182,3 +204,4 @@ for i in range(len(intervention_nodes)):
     if causal_discovery_complete:
         print(f'All edges were discovered after {count_interventions} interventions (out of {len(intervention_nodes)}).')
         break
+'''

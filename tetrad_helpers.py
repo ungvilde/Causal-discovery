@@ -140,7 +140,7 @@ def get_hypersummary(pag, n_neurons):
             summary_edges[edge] = 'o-o'
         if '<->' in summary_edges[edge] and not 'o->' in summary_edges[edge] and not 'o-o' in summary_edges[edge] and not '-->' in summary_edges[edge]:
             summary_edges[edge] = '<->'
-    
+
     return summary_edges
 
 def get_interventions(hypersummary, n_neurons):
