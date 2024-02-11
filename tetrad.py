@@ -1,7 +1,7 @@
 # to Run: 
 # git clone https://github.com/cmu-phil/py-tetrad/
 # cd py-tetrad/pytetrad
-# $ source ~/.bash_profile
+# source ~/.bash_profile
 
 import sys
 import torch

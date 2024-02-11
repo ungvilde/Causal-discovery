@@ -1,3 +1,10 @@
+# To run:
+## be in pytetrad directory
+## make sure spikeenv is active
+## make sure you have the right PATH
+# source ~/.bash_profile
+# echo $JAVA_HOME
+
 import sys
 import os
 import torch
@@ -17,19 +24,15 @@ from functions import *
 seed=132
 np.random.seed(seed)
 
-n_neurons = 10
-n_timelags = 2
-refractory_effect = 2
-n_obs = 7
+n_neurons = 8
+n_timelags = 1
+refractory_effect = n_timelags
+n_obs = 3
 
 # set up summary and full time graph
-summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.3, directed=True, seed=196)
-# summary_graph = nx.DiGraph()
-# summary_graph.add_nodes_from(np.arange(5))
-# summary_graph.add_edges_from([(1, 0), (1, 2), (2,0), (0,2),(1,3),(1,4),(2,1),(1,3)])
-# observed_nodes = [0,2,3,4]
-
-observed_nodes = np.sort(np.random.choice(n_neurons, size=n_obs, replace=False))
+summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.2, directed=True, seed=186)
+#observed_nodes = np.sort(np.random.choice(n_neurons, size=n_obs, replace=False))
+observed_nodes = np.arange(n_obs)
 latent_nodes = [i for i in summary_graph.nodes() if i not in observed_nodes]
 
 n_hidden = len(latent_nodes)
@@ -64,32 +67,38 @@ plt.savefig(
     f'/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/timeseries_graph.pdf'
     )
 
-# get the true MAG for the observed variables
-mag = get_mag_from_dag(fulltime_graph, observed_nodes_fulltime, n_timelags)
-true_summary_edges = get_mag_from_dag(fulltime_graph, observed_nodes_fulltime, n_timelags)
+fig, ax = plt.subplots(1, 2, figsize=(n_neurons, n_neurons // 2))
+nx.draw_networkx(summary_graph, arrows=True, 
+                 ax=ax[0], with_labels=True, 
+                 node_size=400, alpha=1, node_color=node_color,
+                pos=nx.circular_layout(summary_graph))
+ax[0].set_title("Summary graph with latents")
+nx.draw_networkx(fulltime_graph, pos=pos, labels=time_label, node_size=400,ax=ax[1], node_color=fulltime_node_color,alpha=1)
+ax[1].set_title("Full time graph with latents")
+plt.tight_layout()
+plt.show()
 
 # learn pag with oracle 
 dag, _, _ = create_fulltime_graph_tetrad(summary_graph, n_timelags=n_timelags, latent_nodes=latent_nodes, refractory_effect=refractory_effect)
 
+
+print('Run FCI:')
 fci = ts.Fci(ts.test.MsepTest(dag))
 kn = td.Knowledge()
 kn = timeseries_knowledge(n_neurons, n_timelags=n_timelags, refractory_effect=refractory_effect)
 fci.setKnowledge(kn)
 pag = fci.search()
+print(pag)
+A = get_PAG_adjacency_matrix(pag, n_timelags)
 
+print(nx.adjacency_matrix(fulltime_graph_obs))
+print(A)
 summary_edges = get_hypersummary(pag, n_neurons)
 
-print('Edge | FCI | Truth')
+print('Edge | FCI ')
 for edge in summary_edges:
-    try:
-        if summary_edges[edge] == true_summary_edges[edge]:
-            print(edge, summary_edges[edge], true_summary_edges[edge])
-        if summary_edges[edge] != true_summary_edges[edge]:
-            print(edge, summary_edges[edge], true_summary_edges[edge])
-    except KeyError:
-        print(edge, summary_edges[edge])
-        continue
-
+    print(edge, summary_edges[edge])
+"""
 intervention_nodes, targets = get_interventions(summary_edges, n_neurons) # neurons with undecided marks and their resp. targets
 count_interventions = 0
 print('Do interventions in following sequence:', intervention_nodes)
@@ -171,3 +180,4 @@ for intervention_node in intervention_nodes:
         if summary_edges[edge].find('o') != -1:
             causal_discovery_complete = False
 
+"""

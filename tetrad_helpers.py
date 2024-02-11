@@ -161,9 +161,3 @@ def get_interventions(hypersummary, n_neurons):
 
     return sorted(unresolved_count, key=unresolved_count.get, reverse=True), unresolved_targets
 
-def dag_to_mag(summary_graph, latent_nodes):
-    observed_nodes = [i for i in summary_graph.nodes() if i not in latent_nodes]
-    summary_observed = nx.subgraph(summary_graph, observed_nodes)
-
-    return mag  
-
