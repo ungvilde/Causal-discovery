@@ -215,27 +215,38 @@ def get_PAG_adjacency_matrix(pag, n_timelags):
     #2: Arrowhead
     #3: Tail
 
-    nodes_obs = pag.getNodes()
-    nodes_str = pag.getNodeNames()
-    n_nodes = len(nodes_obs)
+    nodes = pag.getNodes()
+    #node_names = pag.getNodeNames()
+    n_nodes = len(nodes)
     A = np.zeros((n_nodes, n_nodes))
 
-    for i, node1 in enumerate(nodes_obs):
-        for j, node2 in enumerate(nodes_obs):
+    for i, node1 in enumerate(nodes):
+        for j, node2 in enumerate(nodes):
+
             if pag.isAdjacentTo(node1, node2):
                 edge_str = str(pag.getEdge(node1, node2))                
                 edge_type = edge_str[(edge_str.find(' ')+1):edge_str.rfind(' ')]
+                
+                cause_node = int(edge_str[edge_str.find('x')+1:edge_str.find(',')])
+                cause_time = int(edge_str[edge_str.find(',')+1:edge_str.find(' ')])
 
-                if edge_type == '-->': # i --> j
-                    A[i, j] = 2
-                    A[j, i] = 3
-                if edge_type == '<->': # i <-> j
-                    A[i, j] = 2
-                    A[j, i] = 2
-                if edge_type == 'o->': # i o-> j
-                    A[i, j] = 2
-                    A[j, i] = 1
-                if edge_type == 'o-o': # i o-o j
-                    A[i, j] = 1
-                    A[j, i] = 1
+                effect_node = int(edge_str[edge_str.rfind('x')+1:edge_str.rfind(',')])
+                effect_time = int(edge_str[edge_str.rfind(',')+1:])
+
+                a = cause_node*(n_timelags+1)+cause_time
+                b = effect_node*(n_timelags+1)+effect_time
+                #print(edge_str, 'is', i, edge_type, j)
+                
+                if edge_type == '-->': # a --> b
+                    A[a, b] = 2
+                    A[b, a] = 3
+                if edge_type == '<->': # a <-> b
+                    A[a, b] = 2
+                    A[b, a] = 2
+                if edge_type == 'o->': # a o-> b
+                    A[a, b] = 2
+                    A[b, a] = 1
+                if edge_type == 'o-o': # a o-o b
+                    A[a, b] = 1
+                    A[b, a] = 1
     return A

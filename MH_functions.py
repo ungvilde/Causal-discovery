@@ -13,7 +13,7 @@ def select_intervention_node(pmg, burnin, L):
     nodes = np.arange(pmg.shape[0])
     vertices_with_undecided_marks = nodes[np.where(pmg == 1)[1]]
 
-    if len(vertices_with_undecided_marks) == 1:
+    if len(vertices_with_undecided_marks) <= 1:
         return vertices_with_undecided_marks
     
     sampled_graphs = MCMC_sampler(pmg, burnin=burnin, L=L)
@@ -23,9 +23,12 @@ def select_intervention_node(pmg, burnin, L):
         if check_if_consistent(pmg, g):
             consistent_graphs.append(g)
     
+
     n_graph = len(consistent_graphs)
     entropy = []
     
+    print('Collected', n_graph, 'samples consistent with the PAG.')
+
     for v in vertices_with_undecided_marks:
         ind = np.where(pmg[:, v] == 1)[0] # where c *-o v
         listC = nodes[ind] # get set of nodes c
@@ -34,12 +37,14 @@ def select_intervention_node(pmg, burnin, L):
         
         for g in consistent_graphs:
             has_arrowhead = np.where(g[listC, v] == 2)[0] 
-            local_structure = list(listC[has_arrowhead]) # the c nodes with arrowhead in graph
+            local_structure = list(listC[has_arrowhead]) # the c nodes with arrowhead in sampled consistent graph
             count_local_structure += 1*np.array([struct == local_structure for struct in all_local_structure])
         
         count_local_structure = count_local_structure[count_local_structure != 0]
         prob = count_local_structure / np.sum(count_local_structure)
         entropy.append(-1*sum(prob * np.log2(prob)))
+    
+    print(vertices_with_undecided_marks)
     print(entropy)
     return vertices_with_undecided_marks[np.argmax(entropy)] # intervention node
 
@@ -60,23 +65,26 @@ def MCMC_sampler(pmg, burnin, L):
 
     for _ in range(burnin + L):
         
-        # sample next candidate mag by from transformation set of previous mag
-        rand_idx = np.random.choice(len(MAG_set_prev))
+        # sample next candidate mag from transformation set of previous mag
+        rand_idx = np.random.choice(N_prev)
         mag_next = MAG_set_prev[rand_idx]
         MAG_set_next = get_consistent_MAGs(mag_next)
         N_next = len(MAG_set_next)
 
         # transition probability
         prob = min(1, N_prev / N_next)  
-        if prob > np.random.rand():
+        if np.random.rand() <= prob: # if we accept
+            #print('accepted, prob =', prob)
             graph_list.append(mag_next)
             mag_prev = mag_next
             MAG_set_prev = MAG_set_next
             N_prev = N_next
-        else:
+
+        else: # if we reject
+            #print('rejected, prob =', prob)
             graph_list.append(mag_prev)
 
-    return graph_list
+    return graph_list[-L:]
 
 def check_if_consistent(pmg, sampled_pag):
     # determine whether the arrowheads in pmg are also in s_pag
@@ -129,12 +137,17 @@ def transition_conditions(mag, a, b):
     return is_satisfied
 
 def update_paths(new_path, indeces, old_path):
-    res = [old_path]
-    tmp = [[j for j in new_path] + [i] for i in indeces]
-    for lst in tmp:
-        res.append(lst)
-    if old_path is None:
-        res.remove(None)
+    tmp = [new_path + [i] for i in indeces]
+    
+    if old_path is None or old_path == []: # add new path to indeces and return
+        res = tmp
+        
+    elif isinstance(old_path[0], int):
+        res = [old_path]
+        for lst in tmp:
+            res.append(lst)
+    else:
+        res = old_path + tmp
     return res
 
 def get_discriminating_path(mag, c, a, b):
@@ -142,7 +155,7 @@ def get_discriminating_path(mag, c, a, b):
     # a <-* b o-* c, with a -> c
     # the algorithm searches for a discriminating
     # path p = <d, . . . , a,b,c> for b of minimal length
-    
+
     p = mag.shape[0]
     visited = np.zeros(p, dtype= np.bool_)
     visited[[a, b, c]] = True
@@ -155,9 +168,11 @@ def get_discriminating_path(mag, c, a, b):
             # next element in the queue
             mpath = path_list[0]
             d = mpath[-1]
+
             if mag[c, d] == 0 and mag[d, c] == 0:
                 min_disc_path = list(reversed(mpath)) + [b, c]
                 return min_disc_path
+            
             else:
                 pred = mpath[-2]
                 path_list.remove(mpath)
@@ -168,7 +183,7 @@ def get_discriminating_path(mag, c, a, b):
                     if len(listR) > 0:
                         path_list = update_paths(mpath[1:], listR, path_list)
 
-    return [] # no disc path found
+    return [] 
 
 def get_consistent_MAGs(mag):
     MAGs = []
