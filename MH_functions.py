@@ -10,8 +10,8 @@ def powerset(lst):
     return all_combs
 
 def select_intervention_node(pmg, burnin, L):
-    nodes = np.arange(pmg.shape[0])
-    vertices_with_undecided_marks = nodes[np.where(pmg == 1)[1]]
+    #nodes = np.arange(pmg.shape[0])
+    vertices_with_undecided_marks = np.unique(np.where(pmg == 1)[1])
 
     if len(vertices_with_undecided_marks) <= 1:
         return vertices_with_undecided_marks
@@ -30,21 +30,26 @@ def select_intervention_node(pmg, burnin, L):
     print('Collected', n_graph, 'samples consistent with the PAG.')
 
     for v in vertices_with_undecided_marks:
-        ind = np.where(pmg[:, v] == 1)[0] # where c *-o v
-        listC = nodes[ind] # get set of nodes c
+        #ind = np.where(pmg[:, v] == 1)[0] # where c *-o v
+        #listC = nodes[ind] # get set of nodes c
+        listC = np.where(pmg[:, v] == 1)[0] 
         all_local_structure = powerset(listC) # enumerate all possible local structures
         count_local_structure = np.zeros(len(all_local_structure)) # for counting occurence of each local structure in sampled graphs
         
         for g in consistent_graphs:
-            has_arrowhead = np.where(g[listC, v] == 2)[0] 
-            local_structure = list(listC[has_arrowhead]) # the c nodes with arrowhead in sampled consistent graph
+            #has_arrowhead = np.where(g[listC, v] == 2)[0] 
+            #local_structure = list(listC[has_arrowhead]) # the c nodes with arrowhead in sampled consistent graph
+            local_structure = list(np.where(g[listC, v] == 2)[0])
             count_local_structure += 1*np.array([struct == local_structure for struct in all_local_structure])
         
         count_local_structure = count_local_structure[count_local_structure != 0]
-        prob = count_local_structure / np.sum(count_local_structure)
+        #prob = count_local_structure / np.sum(count_local_structure)
+        prob = count_local_structure / n_graph
         entropy.append(-1*sum(prob * np.log2(prob)))
     
+    print('Verteces:')
     print(vertices_with_undecided_marks)
+    print('Entropy')
     print(entropy)
     return vertices_with_undecided_marks[np.argmax(entropy)] # intervention node
 
@@ -84,7 +89,7 @@ def MCMC_sampler(pmg, burnin, L):
             #print('rejected, prob =', prob)
             graph_list.append(mag_prev)
 
-    return graph_list[-L:]
+    return graph_list
 
 def check_if_consistent(pmg, sampled_pag):
     # determine whether the arrowheads in pmg are also in s_pag
@@ -276,6 +281,7 @@ def get_possible_ancestors(pag, b):
     return possAn_b
 
 def pag_adjacency_matrix(pag, n_nodes):
+
     A = np.zeros((n_nodes, n_nodes))
     for i, j in pag:
         if pag[(i, j)] == '-->':
@@ -292,3 +298,5 @@ def pag_adjacency_matrix(pag, n_nodes):
             A[j, i] = 1
     
     return A
+
+

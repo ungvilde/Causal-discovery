@@ -22,20 +22,30 @@ from tetrad_helpers import *
 from functions import *
 from MH_functions import *
 
-seed = 599
+seed = 777
 np.random.seed(seed)
 
-n_neurons = 9
+#n_neurons = 6
 n_timelags = 1
 refractory_effect = n_timelags
-n_obs = 4
-
+n_obs = 5
+n_hidden = 3
+n_neurons = n_obs+n_hidden
 # set up summary and full time graph
-summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.25, directed=True, seed=seed)
-observed_nodes = np.arange(n_obs)
-latent_nodes = [i for i in summary_graph.nodes() if i not in observed_nodes]
+observed_graph = nx.erdos_renyi_graph(n=n_obs, p=0.5, directed=True, seed=seed)
+#hidden_graph = nx.DiGraph(n=n_hidden)
 
-n_hidden = len(latent_nodes)
+observed_nodes = np.arange(n_obs)
+latent_nodes = np.arange(n_obs, n_obs+n_hidden)
+
+summary_graph = nx.DiGraph()
+summary_graph.add_nodes_from(observed_nodes)
+summary_graph.add_nodes_from(latent_nodes)
+summary_graph.add_edges_from(observed_graph.edges())
+
+for L in latent_nodes:
+    a, b = np.random.choice(observed_nodes, size=2, replace=False)
+    summary_graph.add_edges_from([(L,a),(L,b)])
 
 fulltime_graph, pos, time_label = create_fulltime_graph(summary_graph, n_timelags=n_timelags)
     
@@ -72,7 +82,7 @@ nx.draw_networkx(summary_graph, arrows=True,
                  node_size=400, alpha=1, node_color=node_color,
                 pos=nx.circular_layout(summary_graph))
 ax[0].set_title("Summary graph with latents")
-nx.draw_networkx(fulltime_graph, pos=pos, labels=time_label, node_size=400,ax=ax[1], node_color=fulltime_node_color,alpha=1)
+nx.draw_networkx(fulltime_graph, pos=pos, labels=time_label, node_size=400, ax=ax[1], node_color=fulltime_node_color,alpha=1)
 ax[1].set_title("Full time graph with latents")
 plt.tight_layout()
 plt.show()
@@ -97,7 +107,7 @@ print(pag)
 
 A = get_PAG_adjacency_matrix(pag, n_timelags)
 np.savetxt('/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/data/adj_mat.txt', A, fmt='%d')
-intervention_node = select_intervention_node(A, 1, 10)
+intervention_node = select_intervention_node(A, 10_000, 10)
 print('node = ',intervention_node, ', neuron = ', intervention_node // (n_timelags+1))
 
 '''
