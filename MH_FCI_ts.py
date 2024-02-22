@@ -25,19 +25,18 @@ from MH_functions import *
 seed = 777
 np.random.seed(seed)
 
-#n_neurons = 6
-n_timelags = 1
+n_timelags = 2
 refractory_effect = n_timelags
-n_obs = 5
-n_hidden = 3
+n_obs = 4
+n_hidden = 2
 n_neurons = n_obs+n_hidden
 # set up summary and full time graph
-observed_graph = nx.erdos_renyi_graph(n=n_obs, p=0.5, directed=True, seed=seed)
 #hidden_graph = nx.DiGraph(n=n_hidden)
 
 observed_nodes = np.arange(n_obs)
 latent_nodes = np.arange(n_obs, n_obs+n_hidden)
 
+observed_graph = nx.erdos_renyi_graph(n=n_obs, p=0.5, directed=True, seed=seed)
 summary_graph = nx.DiGraph()
 summary_graph.add_nodes_from(observed_nodes)
 summary_graph.add_nodes_from(latent_nodes)
@@ -88,7 +87,9 @@ plt.tight_layout()
 plt.show()
 
 # learn pag with oracle 
-dag, _, _ = create_fulltime_graph_tetrad(summary_graph, n_timelags=n_timelags, latent_nodes=latent_nodes, refractory_effect=refractory_effect)
+dag, _, _ = create_fulltime_graph_tetrad(
+    summary_graph, 
+    n_timelags=n_timelags, latent_nodes=latent_nodes, refractory_effect=refractory_effect)
 
 print('Run FCI:')
 fci = ts.Fci(ts.test.MsepTest(dag))
@@ -103,12 +104,11 @@ summary_edges = get_hypersummary(pag, n_neurons)
 # for edge in summary_edges:
 #     print(edge, summary_edges[edge])
 
-print(pag)
+A = get_adjacency_matrix_from_tetrad(pag, n_timelags)
 
-A = get_PAG_adjacency_matrix(pag, n_timelags)
-np.savetxt('/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/data/adj_mat.txt', A, fmt='%d')
-intervention_node = select_intervention_node(A, 10_000, 10)
-print('node = ',intervention_node, ', neuron = ', intervention_node // (n_timelags+1))
+# np.savetxt('/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/data/adj_mat.txt', A, fmt='%d')
+# intervention_node = select_intervention_node(A, 1000, 2000)
+# print('node = ',intervention_node, ', neuron = ', intervention_node // (n_timelags+1))
 
 '''
 #intervention_nodes, targets = get_interventions(summary_edges, n_neurons) # neurons with undecided marks and their resp. targets

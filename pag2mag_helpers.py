@@ -32,32 +32,29 @@ def pag2mag(pag, max_chord=10):
             G_cc = nx.from_numpy_array(A_cc, create_using=nx.Graph()) 
             if not nx.is_chordal(G_cc): # Need to be chordal to be valid
                 return None
-            _A = get_special_dag(A_undir, A_cc, cc) 
-            print('_A:\n',_A)
+            _A = get_special_dag(A_undir, A_cc, cc) # DAG with orientations of circle component.
             A_valid_dag *= _A 
     
-    mag = A_valid_dag + A_dir
-
+    mag = A_valid_dag + A_dir # get MAG with valid transformations
     return mag
 
 def get_special_dag(gm, a, cc_nodes):
-    tmp = a.copy()
-    removed_x = []
-    cc_names = list(cc_nodes.copy())
+    tmp = a.copy() # for selecting subsets of a
+    cc_names = list(cc_nodes.copy()) # to get correct node label for nodes in connected component
 
     while(np.sum(a) != 0):
-        sink_nodes = find_sink_nodes(a)
+        sink_nodes = find_sink_nodes(a) # get sink nodes
         for x in sink_nodes:
-            if check_adjacent(a, x):
-                inc_to_x = (a[:, x] == 1) * (a[x, :] == 1)
+            if check_adjacent(a, x): 
+                inc_to_x = (a[:, x] == 1) * (a[x, :] == 1) # nodes that point to x
                 if np.any(inc_to_x):
-                    real_inc_to_x = [cc_names[i] for i in range(len(cc_names)) if inc_to_x[i]]
-                    real_x = cc_names[x]
+                    real_inc_to_x = [cc_names[i] for i in range(len(cc_names)) if inc_to_x[i]] # get node label to transform
+                    real_x = cc_names[x] # true target
                     gm[real_x, real_inc_to_x] = 3
                     gm[real_inc_to_x, real_x] = 2
-                cc_names.pop(x)
+                cc_names.pop(x) # remove x when done with transformation
                 select = [idx for idx in range(a.shape[0]) if idx != x] 
-                a = tmp[select, :][:, select]
+                a = tmp[select, :][:, select] # subset of a to continue 
                 break
 
     return gm
@@ -67,15 +64,15 @@ def find_sink_nodes(A):
     AA[(AA == AA.T)*(AA==1)] = 0
     return np.where(np.sum(AA, axis=0) == 0)[0]
 
-def check_adjacent(A, x):
+def check_adjacent(A, x): # check if adj. y to x also is adj. to eachother, to ensure shielded collider
     A1 = (A == 1)
     r = A1[x, :]
     c = A1[:, x]
-    nx = np.where(np.logical_or(r, c))[0]
-    nx = set([xx for xx in nx])
+    nb_x = np.where(np.logical_or(r, c))[0] # neighbours of x
+    nb_x = set([xx for xx in nb_x])
     undir_n = np.where(r * c)[0]
     for y in undir_n:
-        adj_x = nx.difference(set([y]))
+        adj_x = nb_x.difference(set([y]))
         ny = np.where(np.logical_or(A1[y,:], A1[:,y]))[0]
         ny = set([yy for yy in ny])
         adj_y = ny.difference(set([x]))

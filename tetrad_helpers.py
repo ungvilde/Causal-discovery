@@ -37,8 +37,7 @@ def timeseries_knowledge(
     
     return kn
 
-def create_fulltime_graph_tetrad(G_summary, n_timelags, refractory_effect,
-latent_nodes=[]):
+def create_fulltime_graph_tetrad(G_summary, n_timelags, refractory_effect,latent_nodes):
     """
     G_summary: a networkx.DiGraph object that represents what neurons causally affect each other
     n_timelags: time window in which causal interactions occur

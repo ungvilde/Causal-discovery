@@ -2,6 +2,10 @@ import networkx as nx
 import numpy as np
 import itertools
 
+from tetrad_helpers import *
+from pag2mag_helpers import *
+from functions import *
+
 def powerset(lst):
     all_combs = []
     for i in range(0, len(lst)+1):
@@ -13,8 +17,8 @@ def select_intervention_node(pmg, burnin, L):
     #nodes = np.arange(pmg.shape[0])
     vertices_with_undecided_marks = np.unique(np.where(pmg == 1)[1])
 
-    if len(vertices_with_undecided_marks) <= 1:
-        return vertices_with_undecided_marks
+    if len(vertices_with_undecided_marks) == 1:
+        return vertices_with_undecided_marks[0]
     
     sampled_graphs = MCMC_sampler(pmg, burnin=burnin, L=L)
     consistent_graphs = []
@@ -49,7 +53,7 @@ def select_intervention_node(pmg, burnin, L):
     
     print('Verteces:')
     print(vertices_with_undecided_marks)
-    print('Entropy')
+    print('Entropy:')
     print(entropy)
     return vertices_with_undecided_marks[np.argmax(entropy)] # intervention node
 
@@ -58,6 +62,7 @@ def MCMC_sampler(pmg, burnin, L):
     
     # get an initial MAG and a set of consistent MAGS
     mag_init = pag2mag(pmg) # NOTE: probably wont work when there are o-o type edges.
+
     MAG_set_init = get_consistent_MAGs(mag_init)
 
     # sample a random MAG in the set
@@ -240,23 +245,6 @@ def get_consistent_MAGs(mag):
     
     return MAGs
 
-def pag2mag(pmg):
-    '''
-    replace o-> with -->, o-o with <->
-    note that I do not deal with potential connected circle components ..o-o v o-o x.. here
-    '''
-    mag = pmg.copy()
-    n = mag.shape[0]
-    for i in range(n):
-        for j in range(n):
-            if mag[i, j] == 2 and mag[j,i] == 1: # i o-> j to i --> j
-                mag[j, i] = 3
-            if mag[i, j] == 1 and mag[j,i] == 1:
-                mag[j, i] = 2
-                mag[i, j] = 2
-
-    return mag
-
 def get_possible_ancestors(pag, b):
     n_nodes = pag.shape[0]
     nodes = np.arange(n_nodes)
@@ -299,4 +287,98 @@ def pag_adjacency_matrix(pag, n_nodes):
     
     return A
 
+def active_learner(
+    summary_graph, 
+    observed_neurons, 
+    latent_neurons, 
+    n_timelags, 
+    method='entropy', 
+    burnin=500, 
+    n_samples=500,
+    max_iter=10):
+    """
+    summary_graph: graph to learn
+    n_neurons: number of neurons in data
+    n_timelags: number fo time lags in model
+    kn: background knowledge of data
+    method: random or entropy for selecting interventions
+    """
+    n_obs = len(observed_neurons)
+    n_hidden = len(latent_neurons)
+    n_neurons = n_obs + n_hidden
 
+    fulltime_dag,_,_ = create_fulltime_graph_tetrad(
+        summary_graph, 
+        n_timelags=n_timelags, latent_nodes=latent_neurons, refractory_effect=n_timelags
+        )
+    
+    # first learn from observational data and BK
+    fci = ts.Fci(ts.test.MsepTest(fulltime_dag)) # learn using CI oracle
+    kn = td.Knowledge() 
+    kn = timeseries_knowledge(n_neurons, n_timelags=n_timelags, refractory_effect=n_timelags)
+    fci.setKnowledge(kn) # add BK
+    pmg_null = fci.search() 
+
+    pmg = get_adjacency_matrix_from_tetrad(pmg_null, n_timelags = n_timelags) # adjacency matrix for PAG
+    intervention_count = 0
+
+    summary_edges = get_hypersummary(pmg_null, n_neurons)
+    print('observational summary:')
+    print(summary_edges)
+
+    while not is_identified(pmg):
+
+        if method == 'entropy':
+            intervention_node = select_intervention_node(pmg, burnin, n_samples)
+        else:
+            raise NotImplementedError('random method not implemented yet')
+
+        intervention_count+=1
+        intervention_neuron = intervention_node // (n_timelags+1) # from full time node index to neuron index
+        print(f'Doing intervention no. {intervention_count} on neuron {intervention_neuron}.')
+
+        # intervene on max. entropy neuron, corresponding to these nodes in full time graph
+        intervention_nodes_fulltime = np.arange(intervention_neuron*(n_timelags+1), (intervention_neuron+1)*(n_timelags+1))
+
+        # get manipulated graph
+        manipulated_graph = summary_graph.copy()
+        manipulated_graph.remove_edges_from(summary_graph.in_edges(intervention_neuron))
+        
+        # plt.figure()
+        # nx.draw_networkx(manipulated_graph,pos=nx.circular_layout(manipulated_graph),with_labels=True)
+        # plt.show()
+        
+        # get full time graph under manipulation
+        manipulated_fulltime_graph, _, _ = create_fulltime_graph(manipulated_graph, n_timelags=n_timelags)
+
+        # TODO: identify adjacent nodes to intervention nodes
+        # check if intervention node is ancestor in manipulated graph
+        print('Updating local BK based on intervention.')
+        for x in intervention_nodes_fulltime:
+            adjacent_nodes = np.where(pmg[:,x] != 0)[0]
+            #print('neurons adj. to ', x // (n_timelags+1), 'are', adjacent_nodes // (n_timelags+1))
+            #print('nodes adj. to ', x, 'are', adjacent_nodes)
+
+            for nb_x in adjacent_nodes:
+                if nb_x // (n_timelags+1) == x // (n_timelags+1):
+                    continue
+                elif x in nx.ancestors(manipulated_fulltime_graph, nb_x): # x causes nb_x
+                    print(f'Require x{intervention_neuron},{x % (n_timelags+1)} --> x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
+                    kn.setRequired(f'x{intervention_neuron},{x % (n_timelags+1)}', f'x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
+                else: # x and nb_x are confounded
+                    print(f'Forbid x{intervention_neuron},{x % (n_timelags+1)} --> x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
+                    kn.setForbidden(f'x{intervention_neuron},{x % (n_timelags+1)}', f'x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
+
+        # add interventional knowledge 
+        fci.setKnowledge(kn)
+        pmg_interventional = fci.search()
+        pmg = get_adjacency_matrix_from_tetrad(pmg_interventional, n_timelags = n_timelags) # adjacency matrix for PAG
+        
+        summary_edges = get_hypersummary(pmg_interventional, n_neurons)
+        print('post-interventional summary:')
+        print(summary_edges)
+
+        if intervention_count>max_iter:
+            break
+
+    return pmg, intervention_count

@@ -209,7 +209,8 @@ def get_mag_from_dag(full_dag, observed_nodes):
             
     return mag
 
-def get_PAG_adjacency_matrix(pag, n_timelags):
+def get_adjacency_matrix_from_tetrad(pag, n_timelags):
+
     #0: No edge
     #1: Circle
     #2: Arrowhead
@@ -233,9 +234,8 @@ def get_PAG_adjacency_matrix(pag, n_timelags):
                 effect_node = int(edge_str[edge_str.rfind('x')+1:edge_str.rfind(',')])
                 effect_time = int(edge_str[edge_str.rfind(',')+1:])
 
-                a = cause_node*(n_timelags+1)+cause_time
-                b = effect_node*(n_timelags+1)+effect_time
-                #print(edge_str, 'is', i, edge_type, j)
+                a = cause_node*(n_timelags+1) + cause_time
+                b = effect_node*(n_timelags+1) + effect_time
                 
                 if edge_type == '-->': # a --> b
                     A[a, b] = 2
@@ -250,3 +250,6 @@ def get_PAG_adjacency_matrix(pag, n_timelags):
                     A[a, b] = 1
                     A[b, a] = 1
     return A
+
+def is_identified(A):
+    return not np.any(A == 1) # no circles in graph
