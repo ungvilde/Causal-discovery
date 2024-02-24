@@ -20,23 +20,22 @@ jpype.startJVM(classpath=[f"{BASE_DIR}/pytetrad/resources/tetrad-current.jar"])
 
 from tetrad_helpers import *
 from functions import *
+from MH_functions import *
 
 seed=132
 np.random.seed(seed)
 
-n_neurons = 8
-n_timelags = 1
+n_neurons = 10
+n_timelags = 2
 refractory_effect = n_timelags
-n_obs = 3
+n_obs = 6
 
 # set up summary and full time graph
-summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.2, directed=True, seed=186)
-#observed_nodes = np.sort(np.random.choice(n_neurons, size=n_obs, replace=False))
+summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.15, directed=True, seed=186)
 observed_nodes = np.arange(n_obs)
 latent_nodes = [i for i in summary_graph.nodes() if i not in observed_nodes]
 
 n_hidden = len(latent_nodes)
-n_obs = len(observed_nodes)
 
 fulltime_graph, pos, time_label = create_fulltime_graph(summary_graph, n_timelags=n_timelags)
     
@@ -81,28 +80,28 @@ plt.show()
 # learn pag with oracle 
 dag, _, _ = create_fulltime_graph_tetrad(summary_graph, n_timelags=n_timelags, latent_nodes=latent_nodes, refractory_effect=refractory_effect)
 
-
 print('Run FCI:')
 fci = ts.Fci(ts.test.MsepTest(dag))
 kn = td.Knowledge()
 kn = timeseries_knowledge(n_neurons, n_timelags=n_timelags, refractory_effect=refractory_effect)
 fci.setKnowledge(kn)
 pag = fci.search()
-print(pag)
-A = get_PAG_adjacency_matrix(pag, n_timelags)
 
-print(nx.adjacency_matrix(fulltime_graph_obs))
-print(A)
 summary_edges = get_hypersummary(pag, n_neurons)
 
 print('Edge | FCI ')
 for edge in summary_edges:
     print(edge, summary_edges[edge])
-"""
-intervention_nodes, targets = get_interventions(summary_edges, n_neurons) # neurons with undecided marks and their resp. targets
+
+A = get_PAG_adjacency_matrix(pag, n_timelags)
+intervention_node = select_intervention_node(A, 500, 500)
+print(intervention_node, intervention_node // (n_timelags+1))
+
+#intervention_nodes, targets = get_interventions(summary_edges, n_neurons) # neurons with undecided marks and their resp. targets
 count_interventions = 0
+do_interventions=True
 print('Do interventions in following sequence:', intervention_nodes)
-for intervention_node in intervention_nodes:
+while do_interventions:
     count_interventions+=1
     target_nodes = targets[intervention_node]
 
@@ -151,7 +150,7 @@ for intervention_node in intervention_nodes:
             is_ancestor = node1 in nx.ancestors(manipulated_fulltime_graph, node2)
             if are_adjacent and is_ancestor:
                 # require causal effect because information will flow from node1 to node 2
-                print('Require', f'x{cause_neuron},{cause_time}', '-->',f'x{effect_neuron},{effect_time}')
+                print('Require', f'x{cause_neuron},{cause_time}', '-->', f'x{effect_neuron},{effect_time}')
                 kn.setRequired(f'x{cause_neuron},{cause_time}', f'x{effect_neuron},{effect_time}')
             else:
                 print('Forbid', f'x{cause_neuron},{cause_time}', '-->',f'x{effect_neuron},{effect_time}')
@@ -179,5 +178,3 @@ for intervention_node in intervention_nodes:
     for edge in summary_edges:
         if summary_edges[edge].find('o') != -1:
             causal_discovery_complete = False
-
-"""
