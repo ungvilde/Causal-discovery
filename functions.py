@@ -2,6 +2,8 @@ import itertools
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
+import torch
+from torch_geometric.utils import from_networkx
 
 from causallearn.utils.PCUtils.BackgroundKnowledge import BackgroundKnowledge
 from tqdm import tqdm
@@ -253,3 +255,35 @@ def get_adjacency_matrix_from_tetrad(pag, n_timelags):
 
 def is_identified(A):
     return not np.any(A == 1) # no circles in graph
+
+def generate_W0(graph, p, w_exc=1.5, w_inh=-3.0):
+    W0 = torch.from_numpy(nx.to_numpy_array(graph))
+    n_neurons = graph.number_of_nodes()
+    are_excitatory = np.random.choice(n_neurons, size=n_neurons//2, replace=False)
+    are_inhibitory = [neuron for neuron in range(n_neurons) if neuron not in are_excitatory]
+
+    for i in are_excitatory:
+        for j in range(n_neurons):
+            if W0[i, j] == 1:
+                W0[i, j] = np.random.beta(a=2,b=2)*w_exc+w_exc/2
+    
+    for i in are_inhibitory:
+        for j in range(n_neurons):
+            if W0[i, j] == 1:
+                W0[i, j] = np.random.beta(a=2,b=2)*w_inh+w_inh/2
+                
+    edge_index = W0.nonzero().t()
+    W0_ = W0[edge_index[0], edge_index[1]]
+    
+    return W0_.to(dtype=torch.float32)
+
+def generate_networks(n_networks, p, n_neurons):
+    network_data = []
+    
+    for _ in range(n_networks):
+        graph = nx.erdos_renyi_graph(n=n_neurons, p=p, directed=True)
+        network = from_networkx(graph)
+        network.W0 = generate_W0(graph, p)
+        network_data.append(network)
+        
+    return network_data

@@ -264,9 +264,10 @@ def observational_learner_Poisson(
         
         log_L_full = glm_model.loglike(res.params) #log-likelihood of full model using ML params
         n_sources = len(source_nodes)
+        full_param = res.params.copy()
         
         for k, source_node in enumerate(source_nodes):
-            null_param = res.params.copy()
+            
             # idx of model params for source node
             source_spikes1 = np.delete(torch.roll(spikes, 1), [idx, node_list.index(source_node)], axis=0) # synaptic effect from 1 time step before
             source_spikes2 = np.delete(torch.roll(spikes, 2), [idx, node_list.index(source_node)], axis=0) # synaptic effect from 2 time step before
@@ -284,7 +285,8 @@ def observational_learner_Poisson(
 
             # use a Poisson regression model
             glm_model = sm.GLM(target_spikes.T, sm.add_constant(X.T), family=sm.families.Poisson())
-            res = glm_model.fit()            
+            remove_idx = [k+1, k+1+n_sources, k+1+2*n_sources]
+            res = glm_model.fit(start_params=np.delete(full_param, remove_idx))            
             
             log_L_null = glm_model.loglike(res.params)
 
@@ -340,7 +342,7 @@ def interventional_learner_Poisson(
                         source_spikes1 = torch.roll(spikes[source_neurons_idx], 1).numpy() # effect from 1 time step before
                         source_spikes2 = torch.roll(spikes[source_neurons_idx], 2).numpy() # effect from 2 time step before
                         source_spikes3 = torch.roll(spikes[source_neurons_idx], 3).numpy() # effect from 3 time step before
-                        
+
                         autoregressive_feature1 = torch.roll(spikes[target_neuron_idx], 1).numpy() # 1 time step history effects
                         autoregressive_feature2 = torch.roll(spikes[target_neuron_idx], 2).numpy() # 2 time step history effects
                         autoregressive_feature3 = torch.roll(spikes[target_neuron_idx], 3).numpy() # 3 time step history effects
@@ -361,21 +363,22 @@ def interventional_learner_Poisson(
 
                         log_L_full = glm_model.loglike(res.params) #log-likelihood of full model using ML params
                         
-                        #get MLE for reduced model
-                        source_spikes1 = np.delete(torch.roll(spikes, 1), node_list.index(intervened_neuron), axis=0) # synaptic effect from 1 time step before
-                        source_spikes2 = np.delete(torch.roll(spikes, 2), node_list.index(intervened_neuron), axis=0) # synaptic effect from 2 time step before
-                        source_spikes3 = np.delete(torch.roll(spikes, 3), node_list.index(intervened_neuron), axis=0) # synaptic effect from 3 time step before
-
+                        # Reduced model
+                        source_spikes1 = np.delete(source_spikes1, source_neurons.index(intervened_neuron), axis=0) # synaptic effect from 1 time step before
+                        source_spikes2 = np.delete(source_spikes2, source_neurons.index(intervened_neuron), axis=0) # synaptic effect from 2 time step before
+                        source_spikes3 = np.delete(source_spikes3, source_neurons.index(intervened_neuron), axis=0) # synaptic effect from 3 time step before
+                                            
                         # create design matrix
                         X = np.vstack(
-                            (source_spikes1, 
+                            (
+                            source_spikes1, 
                             source_spikes2, 
                             source_spikes3,
                             autoregressive_feature1, 
                             autoregressive_feature2, 
                             autoregressive_feature3
                             ))
-
+                        
                         # use a Poisson regression model
                         glm_model = sm.GLM(target_spikes.T, sm.add_constant(X.T), family=sm.families.Poisson())
                         res = glm_model.fit()            

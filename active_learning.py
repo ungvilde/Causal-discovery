@@ -25,7 +25,7 @@ from MH_functions import *
 seed = 900
 np.random.seed(seed)
 
-p = 0.3 # prob. of edge in summary graph
+p = 0.1 # prob. of edge in summary graph
 n_timelags = 1
 refractory_effect = n_timelags
 n_obs = 5
