@@ -1,6 +1,5 @@
 import networkx as nx
 import numpy as np
-import networkx as nx
 
 def pag2mag(pag, max_chord=10):
     mag = pag.copy() # copy partial ancestral graph adjacency matrix

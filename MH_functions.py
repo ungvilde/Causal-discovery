@@ -5,6 +5,7 @@ import itertools
 from tetrad_helpers import *
 from pag2mag_helpers import *
 from functions import *
+#from update_graph import *
 
 def powerset(lst):
     all_combs = []
@@ -61,7 +62,7 @@ def MCMC_sampler(pmg, burnin, L):
     n_nodes = pmg.shape[0]
     
     # get an initial MAG and a set of consistent MAGS
-    mag_init = pag2mag(pmg) # NOTE: probably wont work when there are o-o type edges.
+    mag_init = pag2mag(pmg) 
 
     MAG_set_init = get_consistent_MAGs(mag_init)
 
@@ -160,7 +161,7 @@ def update_paths(new_path, indeces, old_path):
         res = old_path + tmp
     return res
 
-def get_discriminating_path(mag, c, a, b):
+def get_discriminating_path(mag, a, b, c):
     # path (d, .., a, b, c)
     # a <-* b o-* c, with a -> c
     # the algorithm searches for a discriminating
@@ -171,25 +172,22 @@ def get_discriminating_path(mag, c, a, b):
     visited[[a, b, c]] = True
     
     # find all neighbours of a not visited yet, d *-> a
-    listD = np.where((mag[a, :] != 0) * (mag[:, a] == 2) * ~visited)[0] 
+    listD = list(np.where((mag[a, :] != 0) * (mag[:, a] == 2) * ~visited)[0])
     if len(listD) > 0:
         path_list = update_paths([a], listD, None)
         while(len(path_list) > 0):
             # next element in the queue
             mpath = path_list[0]
             d = mpath[-1]
-
             if mag[c, d] == 0 and mag[d, c] == 0:
                 min_disc_path = list(reversed(mpath)) + [b, c]
                 return min_disc_path
-            
             else:
                 pred = mpath[-2]
                 path_list.remove(mpath)
-
                 if mag[d, c] == 2 and mag[c, d] == 3 and mag[pred, d] == 2:
                     visited[d] = True
-                    listR = np.where((mag[d, :] != 0) * (mag[:, d] == 2) * ~visited)[0] # r *-> d
+                    listR = list(np.where((mag[d, :] != 0) * (mag[:, d] == 2) * ~visited)[0]) # r *-> d
                     if len(listR) > 0:
                         path_list = update_paths(mpath[1:], listR, path_list)
 
@@ -300,6 +298,162 @@ def active_learner(
     summary_graph: graph to learn
     n_neurons: number of neurons in data
     n_timelags: number fo time lags in model
+    method: random or entropy for selecting interventions
+    """
+    n_obs = len(observed_neurons)
+    n_hidden = len(latent_neurons)
+    n_neurons = n_obs + n_hidden
+
+    fulltime_dag,_,_ = create_fulltime_graph_tetrad(
+        summary_graph, 
+        n_timelags=n_timelags, latent_nodes=latent_neurons, refractory_effect=n_timelags
+        )
+    
+    # first learn from observational data and time ordering
+    fci = ts.Fci(ts.test.MsepTest(fulltime_dag))
+    kn = td.Knowledge() 
+    kn = timeseries_knowledge(n_neurons, n_timelags=n_timelags, refractory_effect=n_timelags)
+    fci.setKnowledge(kn) # add BK
+    pmg_null = fci.search() 
+    print('result from observational data:')
+    print(pmg_null)
+
+    pmg = get_adjacency_matrix_from_tetrad(pmg_null, n_timelags = n_timelags) # adjacency matrix for PAG
+    intervention_count = 0
+    #summary_edges = get_hypersummary(pmg_null, n_neurons)
+    print('result from observational data:')
+    #print(summary_edges)
+    get_pag_arrows(pmg)
+    print(pmg)
+
+    while not is_identified(pmg):
+        if method == 'entropy':
+            intervention_node = select_intervention_node(pmg, burnin, n_samples)
+        else:
+            raise NotImplementedError('random method not implemented yet')
+        intervention_count+=1
+        intervention_neuron = intervention_node // (n_timelags+1) # from full time node index to neuron index
+        print(f'Doing intervention no. {intervention_count} on neuron {intervention_neuron}.')
+
+        # intervene on max. entropy neuron, corresponding to these nodes in full time graph
+        intervention_nodes_fulltime = np.arange(intervention_neuron*(n_timelags+1), (intervention_neuron+1)*(n_timelags+1))
+
+        # get manipulated graph
+        manipulated_graph = summary_graph.copy()
+        manipulated_graph.remove_edges_from(summary_graph.in_edges(intervention_neuron))
+                
+        # get full time graph under manipulation
+        manipulated_fulltime_graph, _, _ = create_fulltime_graph(manipulated_graph, n_timelags=n_timelags)
+
+        print('Updating graph based on intervention.')
+        adjacent_nodes = np.where(pmg[:, intervention_node] != 0)[0]
+        for nb_x in adjacent_nodes:
+            if intervention_node in nx.ancestors(manipulated_fulltime_graph, nb_x): # intervention_node causes nb_x
+                print(f'We know {intervention_node} --> {nb_x}')
+                pmg[nb_x, intervention_node] = 3
+                pmg[intervention_node, nb_x] = 2
+            else: # x and nb_x are confounded
+                print(f'We know {intervention_node} <-* {nb_x}')
+                pmg[nb_x, intervention_node] = 2
+        # update graph
+        pmg = update_graph(pmg)
+        print(pmg, is_identified(pmg))
+
+        if intervention_count>max_iter:
+            break
+
+    return pmg, intervention_count
+
+def update_graph(pag):
+    if np.any(pag != 0):
+        p = pag.shape[0]
+        old_pag = np.zeros((p,p))
+        while np.any(old_pag != pag):
+            old_pag = pag.copy() # continue until no further updates
+            pag = apply_R1(pag)
+            pag = apply_R2(pag)
+            pag = apply_R4_new(pag)
+            pag = apply_R8(pag)
+    return pag
+
+def apply_R4_new(pag):
+    ind = np.column_stack(np.where((pag != 0) * (pag.T == 1)))
+    while len(ind) > 0:
+        b = ind[0, 0]
+        c = ind[0, 1]
+        ind = ind[1:]
+        indA = list(np.where( (pag[b,:]==2)*(pag[:,b]!=0)*(pag[c,:]==3)*(pag[:,c]==2))[0])
+        while(len(indA) > 0 and pag[c, b] == 1):
+            a = indA[0]
+            indA = indA[1:]
+            done = False
+            while(not done and pag[a, b] != 0 and pag[a, c] != 0 and pag[b, c] != 0):
+                md_path = get_discriminating_path(pag, a, b, c)
+                N_md = len(md_path)
+                if N_md == 0:
+                    done = True
+                else:
+                    print("There is a discriminating path between",md_path[0],"and",
+                    c,"for", b,", and",b,"is in Sepset of", c,"and",md_path[0],
+                    ". Orient:",b,"->",c)
+                    pag[b, c] = 2
+                    pag[c, b] = 3
+                    done = True
+    return pag
+
+def apply_R1(pag):
+    ind = np.column_stack(np.where((pag == 2) * (pag.T != 0)))
+    for i in range(len(ind)):
+        a = ind[i,0]
+        b = ind[i,1]
+        indC = set(np.where( (pag[b,:] != 0)*(pag[:,b] == 1)*(pag[a,:] == 0)*(pag[:,a] == 0))[0])
+        indC = indC.difference([a])
+        if len(indC) > 0:
+            print("Rule 1","Orient:",a,"*->",b,"o-*",indC, "as:",b,"->",indC)
+            pag[b, list(indC)] = 2
+            pag[list(indC), b] = 3
+    return pag
+
+def apply_R2(pag):
+    ind = np.column_stack(np.where((pag == 1) * (pag.T != 0)))
+    for i in range(len(ind)):
+        a = ind[i, 0]
+        c = ind[i, 1]        
+        indB = list(np.where(np.logical_or(
+                                    (pag[a, :] == 2) * (pag[:, a] == 3) * (pag[c,:] != 0) * (pag[:,c] == 2), 
+                                    (pag[a, :] == 2) * (pag[:, a] != 0) * (pag[c,:] == 3) * (pag[:, c] == 2) 
+                                    ))[0])
+        if len(indB)>0:
+            print("Orient:",a,"->", indB, "*->",c,"or",a,"*->",indB, "->",c,"with",a, "*-o", c,"as:",a, "*->",c)
+            pag[a, c] = 2
+    return pag
+
+def apply_R8(pag):
+    ind = np.column_stack(np.where((pag == 2) * (pag.T == 1)))
+    for i in range(len(ind)):
+        a = ind[i,0]
+        c = ind[i,1]  
+        indB = list(np.where( (pag[:,a] == 3)*np.logical_or(pag[a,:] == 1, pag[a,:] == 2)*(pag[c,:] == 3)*(pag[:,c] == 2))[0])
+        if len(indB) > 0:
+            print(f'Orient {c} *-- {a}.')
+            pag[c,a] = 3
+    return pag
+
+
+'''
+def active_learner(
+    summary_graph, 
+    observed_neurons, 
+    latent_neurons, 
+    n_timelags, 
+    method='entropy', 
+    burnin=500, 
+    n_samples=500,
+    max_iter=10):
+    """
+    summary_graph: graph to learn
+    n_neurons: number of neurons in data
+    n_timelags: number fo time lags in model
     kn: background knowledge of data
     method: random or entropy for selecting interventions
     """
@@ -313,12 +467,13 @@ def active_learner(
         )
     
     # first learn from observational data and BK
-    fci = ts.Fci(ts.test.MsepTest(fulltime_dag)) # learn using CI oracle
+    #fci = ts.Fci(ts.test.MsepTest(fulltime_dag)) # learn using CI oracle
+    fci = ts.Fci(ts.test.MsepTest(fulltime_dag))
     kn = td.Knowledge() 
     kn = timeseries_knowledge(n_neurons, n_timelags=n_timelags, refractory_effect=n_timelags)
     fci.setKnowledge(kn) # add BK
     pmg_null = fci.search() 
-
+    print(pmg_null)
     pmg = get_adjacency_matrix_from_tetrad(pmg_null, n_timelags = n_timelags) # adjacency matrix for PAG
     intervention_count = 0
 
@@ -343,11 +498,7 @@ def active_learner(
         # get manipulated graph
         manipulated_graph = summary_graph.copy()
         manipulated_graph.remove_edges_from(summary_graph.in_edges(intervention_neuron))
-        
-        # plt.figure()
-        # nx.draw_networkx(manipulated_graph,pos=nx.circular_layout(manipulated_graph),with_labels=True)
-        # plt.show()
-        
+                
         # get full time graph under manipulation
         manipulated_fulltime_graph, _, _ = create_fulltime_graph(manipulated_graph, n_timelags=n_timelags)
 
@@ -356,24 +507,27 @@ def active_learner(
         print('Updating local BK based on intervention.')
         for x in intervention_nodes_fulltime:
             adjacent_nodes = np.where(pmg[:,x] != 0)[0]
-            #print('neurons adj. to ', x // (n_timelags+1), 'are', adjacent_nodes // (n_timelags+1))
-            #print('nodes adj. to ', x, 'are', adjacent_nodes)
 
             for nb_x in adjacent_nodes:
-                if nb_x // (n_timelags+1) == x // (n_timelags+1):
-                    continue
-                elif x in nx.ancestors(manipulated_fulltime_graph, nb_x): # x causes nb_x
-                    print(f'Require x{intervention_neuron},{x % (n_timelags+1)} --> x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
-                    kn.setRequired(f'x{intervention_neuron},{x % (n_timelags+1)}', f'x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
+                if x in nx.ancestors(manipulated_fulltime_graph, nb_x): # x causes nb_x
+                    pmg[nb_x,x] = 3
+                    pmg[x,nb_x] = 2
+                    print(f'We know {x} -> {nb_x}')
+                    #print(f'Require x{intervention_neuron},{x % (n_timelags+1)} --> x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
+                    #kn.setRequired(f'x{intervention_neuron},{x % (n_timelags+1)}', f'x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
                 else: # x and nb_x are confounded
-                    print(f'Forbid x{intervention_neuron},{x % (n_timelags+1)} --> x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
-                    kn.setForbidden(f'x{intervention_neuron},{x % (n_timelags+1)}', f'x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
+                    #print(f'Forbid x{intervention_neuron},{x % (n_timelags+1)} --> x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
+                    #kn.setForbidden(f'x{intervention_neuron},{x % (n_timelags+1)}', f'x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
+                    print(f'We know {x} <-> {nb_x}')
+                    pmg[nb_x,x] = 2
+                    pmg[x,nb_x] = 2
 
         # add interventional knowledge 
-        fci.setKnowledge(kn)
-        pmg_interventional = fci.search()
-        pmg = get_adjacency_matrix_from_tetrad(pmg_interventional, n_timelags = n_timelags) # adjacency matrix for PAG
-        
+        #fci.setKnowledge(kn)
+        #pmg_interventional = fci.search()
+        #pmg = get_adjacency_matrix_from_tetrad(pmg_interventional, n_timelags = n_timelags) # adjacency matrix for PAG
+        pmg = update_graph(pmg)
+
         summary_edges = get_hypersummary(pmg_interventional, n_neurons)
         print('post-interventional summary:')
         print(summary_edges)
@@ -382,3 +536,4 @@ def active_learner(
             break
 
     return pmg, intervention_count
+'''

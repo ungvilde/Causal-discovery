@@ -29,15 +29,16 @@ from functions import *
 seed=132
 np.random.seed(seed)
 
-n_neurons = 10
-n_timelags = 2
-refractory_effect = 2
-n_obs = 7
+n_neurons = 3
+n_timelags = 3
+refractory_effect = 3
+n_obs = 2
 
 # set up summary
-summary_graph = nx.erdos_renyi_graph(n=n_neurons, p=0.25, directed=True, seed=196)
+summary_graph = nx.DiGraph()
+summary_graph.add_edges_from([(2,0),(2,1)])
 
-observed_nodes = np.sort(np.random.choice(n_neurons, size=n_obs, replace=False))
+observed_nodes = [0,1]
 latent_nodes = [i for i in summary_graph.nodes() if i not in observed_nodes]
 
 n_hidden = len(latent_nodes)
@@ -47,10 +48,10 @@ n_obs = len(observed_nodes)
 neuron_model = BernoulliGLM(
     theta=3.,
     dt=1.,
-    coupling_window=2,
-    abs_ref_scale=2,
+    coupling_window=3,
+    abs_ref_scale=1,
     abs_ref_strength=-100,
-    rel_ref_scale=0,
+    rel_ref_scale=2,
     rel_ref_strength=-30,
     alpha=0.5,
     beta=0.2,
@@ -65,8 +66,8 @@ network_data.W0[:num_edges//2] = 1.5
 network_data.W0[num_edges//2:] = -3
 
 spikes = neuron_model.simulate(network_data, n_steps=n_timesteps, verbose=False)
-print(spikes.shape)
-#make_rasterplot(spikes)
+#print(spikes.shape)
+make_rasterplot(spikes)
 
 fulltimegraph_data = pd.DataFrame()
 for i, node_name in enumerate(summary_graph.nodes()):

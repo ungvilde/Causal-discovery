@@ -254,7 +254,7 @@ def get_adjacency_matrix_from_tetrad(pag, n_timelags):
     return A
 
 def is_identified(A):
-    return not np.any(A == 1) # no circles in graph
+    return not np.any(A == 1.0) # no circles in graph
 
 def generate_W0(graph, p, w_exc=1.5, w_inh=-3.0):
     W0 = torch.from_numpy(nx.to_numpy_array(graph))
@@ -287,3 +287,17 @@ def generate_networks(n_networks, p, n_neurons):
         network_data.append(network)
         
     return network_data
+
+def get_pag_arrows(pag):
+    p = pag.shape[0]
+
+    for i in range(p):
+        for j in range(p):
+            if pag[i,j] == 2 and pag[j,i] == 3:
+                print(f'{i} --> {j}') 
+            if pag[i,j] == 2 and pag[j,i] == 2:
+                print(f'{i} <-> {j}') 
+            if pag[i,j] == 2 and pag[j,i] == 1:
+                print(f'{i} o-> {j}') 
+            if pag[i,j] == 1 and pag[j,i] == 1:
+                print(f'{i} o-o {j}') 

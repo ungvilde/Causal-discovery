@@ -286,7 +286,7 @@ def observational_learner_Poisson(
             # use a Poisson regression model
             glm_model = sm.GLM(target_spikes.T, sm.add_constant(X.T), family=sm.families.Poisson())
             remove_idx = [k+1, k+1+n_sources, k+1+2*n_sources]
-            res = glm_model.fit(start_params=np.delete(full_param, remove_idx))            
+            res = glm_model.fit(start_params=np.delete(full_param, remove_idx)) # start at MLE vals for full model to improve convergence       
             
             log_L_null = glm_model.loglike(res.params)
 
@@ -387,7 +387,7 @@ def interventional_learner_Poisson(
                         
                         D = -2*(log_L_null - log_L_full) # test statistic
                         p = chi2.sf(D, 3)
-                        
+                        #print('p-value =',p, 'for edge',f'{intervened_neuron},{target_neuron}')
                         if p > alpha:
                             SCM_learned.remove_edge(intervened_neuron, target_neuron)
 
