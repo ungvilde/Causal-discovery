@@ -90,13 +90,13 @@ def create_fulltime_graph(G_summary, n_timelags):
     for i, node_name in enumerate(G_summary.nodes()):
         node_idx = i*(n_timelags+1)
         pos[node_idx] = np.array([0, i])
-        time_label[node_idx] = f'X{i}{0}'
+        time_label[node_idx] = f'$X^{i}_{0}$'
 
         for current_time in range(n_timelags):
             G_fulltime.add_edge(node_idx + current_time, node_idx + current_time + 1) # this is the autoregressive effect
             
             pos[node_idx + current_time + 1] = np.array([current_time + 1, i])
-            time_label[node_idx + current_time + 1] = f'X{i}{current_time + 1}'
+            time_label[node_idx + current_time + 1] = f'$X^{i}_{current_time + 1}$'
             
             for _, v in G_summary.out_edges(node_name):
                 j = nodename2idx[v]
@@ -212,33 +212,21 @@ def get_mag_from_dag(full_dag, observed_nodes):
     return mag
 
 def get_adjacency_matrix_from_tetrad(pag, n_timelags):
-
-    #0: No edge
-    #1: Circle
-    #2: Arrowhead
-    #3: Tail
-
+    #0: No edge, 1: Circle, 2: Arrowhead, 3: Tail
     nodes = pag.getNodes()
-    #node_names = pag.getNodeNames()
     n_nodes = len(nodes)
     A = np.zeros((n_nodes, n_nodes))
-
     for i, node1 in enumerate(nodes):
         for j, node2 in enumerate(nodes):
-
             if pag.isAdjacentTo(node1, node2):
                 edge_str = str(pag.getEdge(node1, node2))                
                 edge_type = edge_str[(edge_str.find(' ')+1):edge_str.rfind(' ')]
-                
                 cause_node = int(edge_str[edge_str.find('x')+1:edge_str.find(',')])
                 cause_time = int(edge_str[edge_str.find(',')+1:edge_str.find(' ')])
-
                 effect_node = int(edge_str[edge_str.rfind('x')+1:edge_str.rfind(',')])
                 effect_time = int(edge_str[edge_str.rfind(',')+1:])
-
                 a = cause_node*(n_timelags+1) + cause_time
-                b = effect_node*(n_timelags+1) + effect_time
-                
+                b = effect_node*(n_timelags+1) + effect_time           
                 if edge_type == '-->': # a --> b
                     A[a, b] = 2
                     A[b, a] = 3
@@ -254,7 +242,7 @@ def get_adjacency_matrix_from_tetrad(pag, n_timelags):
     return A
 
 def is_identified(A):
-    return not np.any(A == 1.0) # no circles in graph
+    return not np.any(A == 1) # no circles in graph
 
 def generate_W0(graph, p, w_exc=1.5, w_inh=-3.0):
     W0 = torch.from_numpy(nx.to_numpy_array(graph))
@@ -290,7 +278,6 @@ def generate_networks(n_networks, p, n_neurons):
 
 def get_pag_arrows(pag):
     p = pag.shape[0]
-
     for i in range(p):
         for j in range(p):
             if pag[i,j] == 2 and pag[j,i] == 3:

@@ -73,3 +73,30 @@ def apply_R8(pag):
             pag[c,a] = 3
             print(f'Orient {c} *-- {a}.')
     return pag
+
+
+def apply_R10(pag):
+    ind = np.column_stack(np.where((pag == 2) * (pag.T == 1)))
+    while len(ind) > 0:
+        a = ind[0, 0]
+        c = ind[0, 1]
+        ind = ind[1:]
+        indB = list(np.where((pag[c,:]==3)*(pag[:,c]==2))[0])
+        if len(indB) >= 2:
+            counterB = 0
+            while counterB < len(indB) and pag[c, a] == 1:
+                counterB += 1
+                b = indB[counterB]
+                indD = set(indB).difference([b])
+                counterD = 0
+                while counterD < len(indD) and pag[c,a]==1:
+                    counterD += 1
+                    d = indD[counterD]
+                    if ((pag[a, b]==1 or pag[a, b] == 2) and 
+                        (pag[b, a]==1 or pag[b, a] == 3) and 
+                        (pag[a, d]==1 or pag[a, d] == 2) and
+                        (pag[d, a]==1 or pag[d, a] == 3) and (pag[d, b] == 0) and (pag[b, d] == 0) 
+                        ):
+                        print("Orient:", a, "->", c)
+                        pag[c, a] = 3
+    return pag

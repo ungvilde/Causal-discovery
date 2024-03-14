@@ -23,7 +23,8 @@ from tetrad_helpers import *
 from functions import *
 from MH_functions import *
 
-seed = 1
+seed = 4
+#
 np.random.seed(seed)
 
 sns.set_theme(palette="colorblind",style="ticks",context='notebook')
@@ -41,11 +42,11 @@ params = {
     'lines.linewidth': 1.5,
     }
 
-p = 0.4 # prob. of edge in summary graph
+p = 0.2 # prob. of edge in summary graph
 n_timelags = 2
 refractory_effect = n_timelags
-n_obs = 3
-n_hidden = 2
+n_obs = 7
+n_hidden = 3
 n_neurons = n_obs+n_hidden
 observed_nodes = np.arange(n_obs)
 latent_nodes = np.arange(n_obs, n_obs+n_hidden)
@@ -78,60 +79,68 @@ fulltime_graph_obs = nx.subgraph(fulltime_graph, observed_nodes_fulltime)
 fulltime_node_color = ['grey' if node not in observed_nodes_fulltime else 'red' for node in fulltime_graph.nodes()]
 
 # visualisation of one of the networks generated
-fig, ax = plt.subplots(1, 2, figsize=(15*cm,8*cm))
+fig, ax = plt.subplots(1, 2, figsize=(20*cm,10*cm))
 
 nx.draw_networkx(summary_graph, arrows=True, 
-                 ax=ax[0], with_labels=True, 
-                 node_size=400, alpha=1, node_color=node_color,
-                pos=nx.circular_layout(summary_graph))
+                ax=ax[0], with_labels=True, 
+                node_size=400, alpha=1, node_color=node_color,
+                pos=nx.circular_layout(summary_graph),
+                connectionstyle="arc3,rad=0.1",arrowstyle='->'
+                )
 
 ax[0].set_title("Summary graph with latents")
 ax[0].set_aspect('equal', adjustable='box')
-nx.draw_networkx(fulltime_graph, pos=pos, node_size=400, ax=ax[1], node_color=fulltime_node_color,alpha=1)
+nx.draw_networkx(fulltime_graph, pos=pos, node_size=400, ax=ax[1], arrowsize=8, arrowstyle='->',label=time_label,with_labels=True,
+                node_color=fulltime_node_color,alpha=1,#connectionstyle="arc3,rad=0.1"
+                )
 ax[1].set_title("Full time graph with latents")
 plt.tight_layout()
 plt.savefig('/Users/vildeung/Documents/Masteroppgave/code/causal_discovery/causal_discovery/figures/timeseries_graph.pdf')
 plt.close()
 ##########
-'''
+
 # learn pag with oracle 
 dag, _, _ = create_fulltime_graph_tetrad(summary_graph, n_timelags=n_timelags, latent_nodes=latent_nodes, refractory_effect=refractory_effect)
 
 print('Run FCI no knowledge:')
 fci = ts.Fci(ts.test.MsepTest(dag))
-pag = fci.search()
-summary_edges = get_hypersummary(pag, n_neurons)
+pag_tetrad = fci.search()
+pag = get_adjacency_matrix_from_tetrad(pag_tetrad, n_timelags = n_timelags) # adjacency matrix for PAG
+get_pag_arrows(pag)
 
-print('Edge | FCI ')
-for edge in summary_edges:
-    print(edge, summary_edges[edge])
-
-print('Run with knowledge FCI:')
-fci = ts.Fci(ts.test.MsepTest(dag))
+print('Run FCI with tiered BK:')
+#fci = ts.Fci(ts.test.MsepTest(dag))
 kn = td.Knowledge()
 kn = timeseries_knowledge(n_neurons, n_timelags=n_timelags, refractory_effect=refractory_effect)
 fci.setKnowledge(kn)
-pag = fci.search()
+pag_tetrad = fci.search()
+pag = get_adjacency_matrix_from_tetrad(pag_tetrad, n_timelags = n_timelags) # adjacency matrix for PAG
+get_pag_arrows(pag)
 
-summary_edges = get_hypersummary(pag, n_neurons)
+# add knowledge from time structure
+# for i in range(pag.shape[0]):
+#     for j in range(pag.shape[0]):
+#         if pag[i, j] == 3 and pag[j, i] == 2 and j // (n_timelags+1) != i//(n_timelags+1): # j --> i
+#             time_shift = i % (n_timelags+1) - j % (n_timelags+1)
+#             print(i,'->',j,'time lag', time_shift)
+#         if pag[j, i] == 3 and pag[i, j] == 2 and j // (n_timelags+1) != i//(n_timelags+1): # j --> i
+#             time_shift = i % (n_timelags+1) - j % (n_timelags+1)
+#             print(j,'->',i,'time lag', time_shift)
 
-print('Edge | FCI ')
-for edge in summary_edges:
-    print(edge, summary_edges[edge])
+#print(nx.to_latex(fulltime_graph,pos=pos,node_label=time_label))
+#print(nx.to_latex(summary_graph))
 
-'''
 
-pmg, num_interventions = active_learner(
-    summary_graph=summary_graph, 
-    observed_neurons=observed_nodes, 
-    latent_neurons=latent_nodes, 
-    n_timelags=n_timelags,
-    method='entropy',
-    burnin=0,
-    n_samples=3000,
-    max_iter=10)
 
-get_pag_arrows(pmg)
-print('Model identified after', num_interventions, 'interventions.')
-print(pmg == 1.0)
-print(pmg)
+# pmg, num_interventions = active_learner(
+#     summary_graph=summary_graph, 
+#     observed_neurons=observed_nodes, 
+#     latent_neurons=latent_nodes, 
+#     n_timelags=n_timelags,
+#     method='entropy-singlenode',
+#     burnin=0,
+#     n_samples=2_000,
+#     max_iter=10)
+
+# get_pag_arrows(pmg)
+# print('Model identified after', num_interventions, 'interventions.')

@@ -3,8 +3,6 @@ import edu.cmu.tetrad.search as ts
 import edu.cmu.tetrad.data as td
 import java.util as jutil
 
-#from MH_functions import *
-
 def timeseries_knowledge(
     n_neurons,
     n_timelags, 
@@ -12,9 +10,6 @@ def timeseries_knowledge(
     require_refractory_effects=True, 
     forbid_contemporaneous_effects=True
     ):
-
-    #refractory_effect=n_timelags #refractory effects occur at every relevant time lag
-
     kn = td.Knowledge()
     for i in range(n_neurons):
         for t in range(n_timelags+1):
@@ -26,16 +21,6 @@ def timeseries_knowledge(
                 for t_ref in range(1, refractory_effect+1):
                     if current_time + t_ref <= n_timelags:
                         kn.setRequired(f'x{i},{current_time}', f'x{i},{current_time+t_ref}')
-    
-    #for i in range(n_neurons): # forbid neurons from causal influende 
-    #    for current_time in range(n_timelags+1):
-    #        for j in range(n_neurons):
-    #            if i != j:
-    #                kn.setForbidden(f'x{i},{current_time}', f'x{j},{current_time+1}')
-
-    #for t in range(n_timelags+1):
-    #    kn.setTierForbiddenWithin(t, True)
-    
     return kn
 
 def create_fulltime_graph_tetrad(G_summary, n_timelags, refractory_effect, latent_nodes):
@@ -162,104 +147,3 @@ def get_interventions(hypersummary, n_neurons):
     return sorted(unresolved_count, key=unresolved_count.get, reverse=True), unresolved_targets
 
 
-'''
-def active_learner(
-    summary_graph, 
-    observed_neurons, 
-    latent_neurons, 
-    n_timelags, 
-    method='entropy', 
-    burnin=500, 
-    n_samples=500,
-    max_iter=10):
-    """
-    summary_graph: graph to learn
-    n_neurons: number of neurons in data
-    n_timelags: number fo time lags in model
-    kn: background knowledge of data
-    method: random or entropy for selecting interventions
-    """
-    n_obs = len(observed_neurons)
-    n_hidden = len(latent_neurons)
-    n_neurons = n_obs + n_hidden
-
-    fulltime_dag,_,_ = create_fulltime_graph_tetrad(
-        summary_graph, 
-        n_timelags=n_timelags, latent_nodes=latent_neurons, refractory_effect=n_timelags
-        )
-    
-    # first learn from observational data and BK
-    #fci = ts.Fci(ts.test.MsepTest(fulltime_dag)) # learn using CI oracle
-    fci = ts.Fci(ts.test.MsepTest(fulltime_dag))
-    fci.setCompleteRuleSetUsed(True)
-    kn = td.Knowledge() 
-    kn = timeseries_knowledge(n_neurons, n_timelags=n_timelags, refractory_effect=n_timelags)
-    fci.setKnowledge(kn) # add BK
-    pmg_null = fci.search() 
-    print(pmg_null)
-    pmg = get_adjacency_matrix_from_tetrad(pmg_null, n_timelags = n_timelags) # adjacency matrix for PAG
-    intervention_count = 0
-
-    summary_edges = get_hypersummary(pmg_null, n_neurons)
-    print('observational summary:')
-    print(summary_edges)
-
-    while not is_identified(pmg):
-
-        if method == 'entropy':
-            intervention_node = select_intervention_node(pmg, burnin, n_samples)
-        else:
-            raise NotImplementedError('random method not implemented yet')
-
-        intervention_count+=1
-        intervention_neuron = intervention_node // (n_timelags+1) # from full time node index to neuron index
-        print(f'Doing intervention no. {intervention_count} on neuron {intervention_neuron}.')
-
-        # intervene on max. entropy neuron, corresponding to these nodes in full time graph
-        intervention_nodes_fulltime = np.arange(intervention_neuron*(n_timelags+1), (intervention_neuron+1)*(n_timelags+1))
-
-        # get manipulated graph
-        manipulated_graph = summary_graph.copy()
-        manipulated_graph.remove_edges_from(summary_graph.in_edges(intervention_neuron))
-        
-        # plt.figure()
-        # nx.draw_networkx(manipulated_graph,pos=nx.circular_layout(manipulated_graph),with_labels=True)
-        # plt.show()
-        
-        # get full time graph under manipulation
-        manipulated_fulltime_graph, _, _ = create_fulltime_graph(manipulated_graph, n_timelags=n_timelags)
-
-        # TODO: identify adjacent nodes to intervention nodes
-        # check if intervention node is ancestor in manipulated graph
-        print('Updating local BK based on intervention.')
-        for x in intervention_nodes_fulltime:
-            adjacent_nodes = np.where(pmg[:,x] != 0)[0]
-            #print('neurons adj. to ', x // (n_timelags+1), 'are', adjacent_nodes // (n_timelags+1))
-            #print('nodes adj. to ', x, 'are', adjacent_nodes)
-
-            for nb_x in adjacent_nodes:
-                if nb_x // (n_timelags+1) == x // (n_timelags+1):
-                    continue
-                elif x in nx.ancestors(manipulated_fulltime_graph, nb_x): # x causes nb_x
-                    print(f'Require x{intervention_neuron},{x % (n_timelags+1)} --> x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
-                    kn.setRequired(f'x{intervention_neuron},{x % (n_timelags+1)}', f'x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
-                else: # x and nb_x are confounded
-                    print(f'Forbid x{intervention_neuron},{x % (n_timelags+1)} --> x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
-                    kn.setForbidden(f'x{intervention_neuron},{x % (n_timelags+1)}', f'x{nb_x//(n_timelags+1)},{nb_x%(n_timelags+1)}')
-
-        # add interventional knowledge 
-        fci.setKnowledge(kn)
-        pmg_interventional = fci.search()
-        pmg = get_adjacency_matrix_from_tetrad(pmg_interventional, n_timelags = n_timelags) # adjacency matrix for PAG
-        
-        pmg = apply_R4_new(pmg) # orientation rule by Wang
-
-        summary_edges = get_hypersummary(pmg_interventional, n_neurons)
-        print('post-interventional summary:')
-        print(summary_edges)
-
-        if intervention_count>max_iter:
-            break
-
-    return pmg, intervention_count
-    '''
