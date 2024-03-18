@@ -45,8 +45,8 @@ params = {
 p = 0.2 # prob. of edge in summary graph
 n_timelags = 2
 refractory_effect = n_timelags
-n_obs = 7
-n_hidden = 3
+n_obs = 5
+n_hidden = 2
 n_neurons = n_obs+n_hidden
 observed_nodes = np.arange(n_obs)
 latent_nodes = np.arange(n_obs, n_obs+n_hidden)
@@ -132,15 +132,15 @@ get_pag_arrows(pag)
 
 
 
-# pmg, num_interventions = active_learner(
-#     summary_graph=summary_graph, 
-#     observed_neurons=observed_nodes, 
-#     latent_neurons=latent_nodes, 
-#     n_timelags=n_timelags,
-#     method='entropy-singlenode',
-#     burnin=0,
-#     n_samples=2_000,
-#     max_iter=10)
+pmg, num_interventions = active_learner(
+    summary_graph=summary_graph, 
+    observed_neurons=observed_nodes, 
+    latent_neurons=latent_nodes, 
+    n_timelags=n_timelags,
+    method='random',
+    burnin=0,
+    n_samples=2_000,
+    max_iter=10)
 
-# get_pag_arrows(pmg)
-# print('Model identified after', num_interventions, 'interventions.')
+get_pag_arrows(pmg)
+print('Model identified after', num_interventions, 'interventions.')
