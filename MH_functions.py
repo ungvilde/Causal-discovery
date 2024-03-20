@@ -66,6 +66,7 @@ def MCMC_sampler(pmg, burnin, L):
     # get an initial MAG and a set of consistent MAGS
     mag_init = pag2mag(pmg) 
 
+    ###graph_list = collect(mag_init, burnin, L)
     MAG_set_init = get_consistent_MAGs(mag_init)
 
     # sample a random MAG in the set
@@ -99,6 +100,40 @@ def MCMC_sampler(pmg, burnin, L):
 
     return graph_list
 
+def collect(mag_init, burnin, L):
+    MAG_set_init = get_consistent_MAGs(mag_init)
+
+    # sample a random MAG in the set
+    rand_idx = np.random.choice(len(MAG_set_init))
+    mag_prev = MAG_set_init[rand_idx]
+
+    graph_list = [] # for storing sampled MAGs
+    MAG_set_prev = get_consistent_MAGs(mag_prev)
+    N_prev = len(MAG_set_prev)
+
+    for _ in range(burnin + L):
+        
+        # sample next candidate mag from transformation set of previous mag
+        rand_idx = np.random.choice(N_prev)
+        mag_next = MAG_set_prev[rand_idx]
+        MAG_set_next = get_consistent_MAGs(mag_next)
+        N_next = len(MAG_set_next)
+
+        # transition probability
+        prob = min(1, N_prev / N_next)  
+        if np.random.rand() <= prob: # if we accept
+            #print('accepted, prob =', prob)
+            graph_list.append(mag_next)
+            mag_prev = mag_next
+            MAG_set_prev = MAG_set_next
+            N_prev = N_next
+
+        else: # if we reject
+            #print('rejected, prob =', prob)
+            graph_list.append(mag_prev)
+
+    return graph_list
+
 def check_if_consistent(pmg, sampled_pag):
     # determine whether the arrowheads in pmg are also in s_pag
     ind = np.where(pmg == 2)
@@ -108,7 +143,7 @@ def check_if_consistent(pmg, sampled_pag):
     tail_same = np.all(sampled_pag[ind] == 3)
 
     return arrowhead_same * tail_same
-  
+
 def transition_conditions(mag, a, b):
     is_satisfied = True
 
@@ -195,7 +230,6 @@ def get_discriminating_path(mag, a, b, c):
 
     return [] 
 
-#@jit(nopython=True)
 def get_consistent_MAGs(mag):
     MAGs = []
     
@@ -499,53 +533,6 @@ def select_intervention_neuron(pmg, burnin, L, n_timelags, n_neurons):
     if len(vertices_with_undecided_marks) == 1:
         return vertices_with_undecided_marks[0] // (n_timelags+1) 
     sampled_graphs = MCMC_sampler(pmg, burnin=burnin, L=L)
-    consistent_graphs = []  
-    for g in sampled_graphs:
-        if check_if_consistent(pmg, g):
-            consistent_graphs.append(g)
-    n_graph = len(consistent_graphs)
-    entropy = []
-    print('Collected', n_graph, 'samples consistent with the PAG.')
-    for v in vertices_with_undecided_marks:
-        listC = np.where(pmg[:, v] == 1)[0]  # where c *-o v
-        all_local_structure = powerset(listC) # enumerate all possible local structures
-        count_local_structure = np.zeros(len(all_local_structure)) # for counting occurence of each local structure in sampled graphs
-        for g in consistent_graphs:
-            local_structure = list(np.where(g[listC, v] == 2)[0])
-            count_local_structure += 1*np.array([struct == local_structure for struct in all_local_structure])        
-        count_local_structure = count_local_structure[count_local_structure != 0]
-        prob = count_local_structure / n_graph
-        entropy.append(-1*sum(prob * np.log2(prob)))
-    
-    # print('Verteces:')
-    # print(vertices_with_undecided_marks)
-    # print('Entropy:')
-    # print(entropy)
-
-    entropy_by_neuron = {neuron : 0 for neuron in neurons_with_undecided_marks}
-    for i, v in enumerate(vertices_with_undecided_marks):
-        entropy_by_neuron[v // (n_timelags+1)] += entropy[i]
-    
-    print(neurons_with_undecided_marks)
-    print(entropy_by_neuron)
-    
-    return max(entropy_by_neuron, key=entropy_by_neuron.get) # intervention node
-
-def select_intervention_neuron_parallel(pmg, burnin, L, n_timelags, n_neurons, n_threads=4):
-    
-    vertices_with_undecided_marks = np.unique(np.where(pmg == 1)[1])
-    neurons_with_undecided_marks = np.unique([x // (n_timelags+1) for x in vertices_with_undecided_marks])
-
-    if len(vertices_with_undecided_marks) == 1:
-        return vertices_with_undecided_marks[0] // (n_timelags+1) 
-    
-    batch_size = (burnin + L) // n_threads
-    sampled_graphs = np.zeros((n_threads, batch_size))
-    for b in range(n_threads):
-        sampled_graphs[i] = MCMC_sampler(pmg, burnin=burnin, L=L)
-    
-    sampled_graphs = sampled_graphs.flatten()
-    
     consistent_graphs = []  
     for g in sampled_graphs:
         if check_if_consistent(pmg, g):

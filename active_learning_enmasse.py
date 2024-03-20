@@ -27,11 +27,11 @@ from MH_functions import *
 # seed = 4
 # np.random.seed(seed)
 
-p = 0.2 # prob. of edge in summary graph
+p = 0.1 # prob. of edge in summary graph
 n_timelags = 2
 refractory_effect = n_timelags
-n_obs = 5
-n_hidden = 2
+n_obs = 4
+n_hidden = 3
 n_neurons = n_obs+n_hidden
 observed_nodes = np.arange(n_obs)
 latent_nodes = np.arange(n_obs, n_obs+n_hidden)
@@ -83,7 +83,7 @@ for network in range(n_networks):
             n_timelags=n_timelags,
             method='random',
             burnin=0,
-            n_samples=20_000,
+            n_samples=50_000,
             max_iter=10)
        
         if method == 'entropy-byneuron':
@@ -99,7 +99,7 @@ for network in range(n_networks):
                 n_timelags=n_timelags,
                 method='entropy-byneuron',
                 burnin=0,
-                n_samples=100_000,
+                n_samples=30_000,
                 max_iter=10)
         
         print(f'With {method}: Model identified after {num_interventions} interventions.')
